@@ -156,9 +156,9 @@ uvicorn app.main:app --reload         # dashboard at http://localhost:8000, pass
 |---|---|
 | Total emails processed | 520 |
 | Comparison requests (`BL_COMPARISON`) | 129 |
-| Auto-resolved (`OK` + `MISMATCH`) | 502 |
-| `NEEDS_REVIEW` | 18 |
-| `OK` | 454 |
+| Auto-resolved within comparison requests (`OK` + `MISMATCH`) | 111 (63 `OK` + 48 `MISMATCH`) |
+| `NEEDS_REVIEW` (within comparison requests) | 18 |
+| `OK` (all 520, incl. 391 non-comparison emails whose category alone determines the submission entry) | 454 |
 | `MISMATCH` | 48 |
 | Review reasons | `wrong_doc_type` 5, `missing_attachment` 5, `unreadable` 2, `missing_value` 6 |
 | Total runtime (cold, fresh Gemini calls) | 118.9s (≈228 ms/email) |
@@ -240,7 +240,7 @@ The discriminator is the verb: *send* (operational request, nothing to check yet
 | Technical Feasibility & Validation (15) | Dev-set metrics (§6), per-field tests, a documented failure-analysis table with real observed cases, 46 passing pytest tests, reproducible one-command pipeline | Dev-set metrics are self-labeled and circular (disclosed in §6), no independent held-out set exists | Disclosed explicitly rather than presented as clean accuracy |
 | Problem Statement Understanding (10) | §1 written from the operator's workflow, named stakeholders, sourced from the actual official use-case brief | — | — |
 | Innovation & Solution Approach (10) | Six differentiators listed in §5, each traceable to a specific file/function | Cross-document verification (a 7th differentiator in the original build brief) not built | Marked Future Work, not claimed |
-| Practical Value & Potential (10) | Real funnel numbers (§6): 129 comparison requests, 502 auto-resolved, 18 escalated; runtime measured at both cold and warm cache | No manual-baseline timing to compare against | Marked "Not measured yet" rather than invented |
+| Practical Value & Potential (10) | Real funnel numbers (§6): 129 comparison requests, 111 auto-resolved, 18 escalated; runtime measured at both cold and warm cache | No manual-baseline timing to compare against | Marked "Not measured yet" rather than invented |
 
 ## 10. Demo script
 
@@ -253,7 +253,7 @@ Runnable against the live dashboard or `TestClient` locally.
 5. **Evidence (0:10)** — Same page: each value's source line and extraction method (`rule` for this `.txt` pair) are shown side by side.
 6. **Uncertainty (0:20)** — Open `email_507`: SI attached, BL genuinely missing → `NEEDS_REVIEW / missing_attachment`, explained as a deliberate refusal to guess, not a failure.
 7. **Human review (0:25)** — Confirm `email_507` as reviewed; then on `email_004`, correct the BL's `consignee` field to `EAST BRIGHT FZ-LLC` and show the recompute live-narrow the defect set to just `[notify_party]`, with the audit trail entry appearing below.
-8. **Impact (0:20)** — Dashboard summary: 520 processed, 502 auto-resolved, 18 escalated, full run in 119s — then state plainly that the transaction-verification extension is Future Work, not part of this number.
+8. **Impact (0:20)** — Dashboard summary: 520 processed, 129 comparison requests (111 auto-resolved, 18 escalated), full run in 119s — then state plainly that the transaction-verification extension is Future Work, not part of this number.
 
 ---
 

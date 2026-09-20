@@ -9,7 +9,7 @@
 **What's built and verified against the real 520-email dataset (not a subset):**
 - Full pipeline run producing a `submission.json` that validates against `sample_submission.json`'s exact shape — 454 `OK`, 48 `MISMATCH`, 18 `NEEDS_REVIEW` (all 4 reasons represented).
 - A live human-review-and-recompute loop verified on real data: correcting one field on a genuine mismatch (`email_004`) narrowed `defect_fields` from `[consignee, notify_party]` to `[notify_party]` and re-persisted, with an audit trail entry.
-- Supabase-backed dashboard: funnel (520 → 129 comparison requests → 502 auto-resolved → 18 escalated), per-field discrepancy counts, decision-source breakdown (rule vs. Gemini vs. human), runtime.
+- Supabase-backed dashboard: funnel (520 → 129 comparison requests → 111 auto-resolved → 18 escalated), per-field discrepancy counts, decision-source breakdown (rule vs. Gemini vs. human), runtime.
 - 46 passing automated tests covering the file-type detector, the alias parser, every normalizer, the comparator, all 4 review-reason paths, and the submission schema validator.
 - Two real safeguards caught mid-build and documented with evidence in the README's failure-analysis table: Gemini merging an address line into a name field (fixed via a prompt constraint), and a scanned-document field correctly discarded when two independent vision reads disagreed (system escalated instead of guessing).
 
