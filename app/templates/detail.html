@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}SDOC — {{ email_id }}{% endblock %}
+{% block content %}
+{% set email = d.email %}
+{% set cmp = d.comparison %}
+{% set cls = d.classification %}
+
+<h1>{{ email_id }}</h1>
+<p class="muted">From: {{ email.from_addr }} &mdash; Subject: {{ email.subject }}</p>
+
+<section class="card">
+  <h2>Classification</h2>
+  <p><strong>{{ cls.category if cls else "?" }}</strong> — decided by <code>{{ cls.decided_by if cls else "?" }}</code></p>
+  <p class="muted">{{ cls.rationale if cls else "" }}</p>
+</section>
+
+{% if cmp %}
+<section class="card status-{{ cmp.status|lower }}">
+  <h2>Comparison result: {{ cmp.status }}</h2>
+  {% if cmp.status == "NEEDS_REVIEW" %}
+    <p class="reason">Why: <strong>{{ cmp.review_reason }}</strong> — {{ cmp.notes }}</p>
+    <p class="muted">This is a deliberate escalation, not a failure: the system will not guess when it cannot verify a value.</p>
+  {% elif cmp.status == "MISMATCH" %}
+    <p>Defect fields: <strong>{{ cmp.defect_fields|join(", ") }}</strong></p>
+  {% else %}
+    <p>No mismatch detected — all 7 fields agree.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>SI vs BL — field by field</h2>
+  <table class="compare">
+    <thead><tr><th>Field</th><th>SI value</th><th>BL value</th><th>Match</th></tr></thead>
+    <tbody>
+    {% for fc in cmp.per_field %}
+      <tr class="{{ 'mismatch' if not fc.match else '' }}">
+        <td>{{ fc.field }}</td>
+        <td>{{ fc.si_value if fc.si_value is not none else "(" + fc.si_state + ")" }}</td>
+        <td>{{ fc.bl_value if fc.bl_value is not none else "(" + fc.bl_state + ")" }}</td>
+        <td>{{ "match" if fc.match else "DIFFERS" }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Extracted fields — evidence and method</h2>
+  {% for doc in d.documents %}
+    <h3>{{ doc.role }} — {{ doc.filename or "(no attachment)" }} — doc_kind: {{ doc.doc_kind }} — readable: {{ doc.readable }}</h3>
+    <table class="evidence">
+      <thead><tr><th>Field</th><th>Value</th><th>Source label</th><th>Method</th><th>Evidence</th><th>Correct</th></tr></thead>
+      <tbody>
+      {% for f in d.doc_fields.get(doc.id, []) %}
+        <tr>
+          <td>{{ f.field }}</td>
+          <td>{{ f.raw_value if f.raw_value is not none else "(" + f.state + ")" }}</td>
+          <td>{{ f.source_label or "" }}</td>
+          <td><code>{{ f.method }}</code></td>
+          <td class="evidence-quote">{{ f.evidence_quote or "" }}</td>
+          <td>
+            <form method="post" action="/email/{{ email_id }}/correct" class="inline-form">
+              <input type="hidden" name="document_id" value="{{ doc.id }}">
+              <input type="hidden" name="field" value="{{ f.field }}">
+              <input type="text" name="new_value" placeholder="corrected value" size="14">
+              <button type="submit">Fix</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+  {% if not d.documents %}<p class="muted">No SI/BL documents on this email.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Reviewer actions</h2>
+  <form method="post" action="/email/{{ email_id }}/confirm" class="inline-form">
+    <input type="text" name="reason" placeholder="reason (optional)">
+    <button type="submit">Confirm result as-is</button>
+  </form>
+  <form method="post" action="/email/{{ email_id }}/reject" class="inline-form">
+    <input type="text" name="reason" placeholder="reason (optional)">
+    <button type="submit">Reject / flag for follow-up</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Audit trail</h2>
+  <table class="list">
+    <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Field</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for a in d.actions %}
+      <tr><td>{{ a.created_at }}</td><td>{{ a.actor }}</td><td>{{ a.action }}</td><td>{{ a.field or "" }}</td><td>{{ a.reason or "" }}</td></tr>
+    {% endfor %}
+    {% if not d.actions %}<tr><td class="muted" colspan="5">No actions yet.</td></tr>{% endif %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

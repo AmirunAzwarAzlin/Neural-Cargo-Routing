@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}SDOC — Review Queue{% endblock %}
+{% block content %}
+<h1>Review queue</h1>
+<form class="filters" method="get">
+  <select name="status">
+    <option value="">All statuses</option>
+    {% for opt in ["OK", "MISMATCH", "NEEDS_REVIEW"] %}
+    <option value="{{ opt }}" {% if status == opt %}selected{% endif %}>{{ opt }}</option>
+    {% endfor %}
+  </select>
+  <select name="reason">
+    <option value="">All reasons</option>
+    {% for opt in ["missing_attachment", "wrong_doc_type", "unreadable", "missing_value"] %}
+    <option value="{{ opt }}" {% if reason == opt %}selected{% endif %}>{{ opt }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit">Filter</button>
+</form>
+
+<table class="list">
+  <thead><tr><th>Email</th><th>Subject</th><th>Status</th><th>Reason</th><th>Defect fields</th></tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr class="row-{{ row.status|lower }}">
+      <td><a href="/email/{{ row.email_id }}">{{ row.email_id }}</a></td>
+      <td>{{ row.emails.subject if row.emails else "" }}</td>
+      <td>{{ row.status }}</td>
+      <td>{{ row.review_reason or "" }}</td>
+      <td>{{ (row.defect_fields or [])|join(", ") }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

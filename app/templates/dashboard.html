@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}SDOC — Dashboard{% endblock %}
+{% block content %}
+<h1>Pipeline summary</h1>
+<p class="muted">Measured result from the most recent full pipeline run{% if s.run %} ({{ s.run.total_emails }} emails, {{ s.run.notes }}){% endif %}.</p>
+
+<section class="funnel">
+  <div class="funnel-step"><div class="num">{{ s.total_emails }}</div><div class="label">Emails processed</div></div>
+  <div class="arrow">&rarr;</div>
+  <div class="funnel-step"><div class="num">{{ s.comparison_requests }}</div><div class="label">Comparison requests</div></div>
+  <div class="arrow">&rarr;</div>
+  <div class="funnel-step ok"><div class="num">{{ s.auto_resolved }}</div><div class="label">Auto-resolved (OK/MISMATCH)</div></div>
+  <div class="arrow">&rarr;</div>
+  <div class="funnel-step review"><div class="num">{{ s.needs_review }}</div><div class="label">Needs review</div></div>
+</section>
+
+<div class="grid">
+  <section class="card">
+    <h2>Categories</h2>
+    <table>
+      {% for k, v in s.category_counts.items() %}<tr><td>{{ k }}</td><td class="num-cell">{{ v }}</td></tr>{% endfor %}
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Comparison status</h2>
+    <table>
+      {% for k, v in s.status_counts.items() %}<tr><td>{{ k }}</td><td class="num-cell">{{ v }}</td></tr>{% endfor %}
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Review reasons</h2>
+    <table>
+      {% for k, v in s.reason_counts.items() %}<tr><td>{{ k }}</td><td class="num-cell">{{ v }}</td></tr>{% endfor %}
+      {% if not s.reason_counts %}<tr><td class="muted">none</td></tr>{% endif %}
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Discrepancies by field</h2>
+    <table>
+      {% for k, v in s.defect_field_counts.items() %}<tr><td>{{ k }}</td><td class="num-cell">{{ v }}</td></tr>{% endfor %}
+      {% if not s.defect_field_counts %}<tr><td class="muted">none</td></tr>{% endif %}
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Classification decision source</h2>
+    <table>
+      {% for k, v in s.classification_decision_sources.items() %}<tr><td>{{ k }}</td><td class="num-cell">{{ v }}</td></tr>{% endfor %}
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Field extraction method</h2>
+    <table>
+      {% for k, v in s.field_extraction_methods.items() %}<tr><td>{{ k }}</td><td class="num-cell">{{ v }}</td></tr>{% endfor %}
+    </table>
+  </section>
+</div>
+{% endblock %}

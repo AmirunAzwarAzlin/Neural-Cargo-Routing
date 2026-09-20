@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}SDOC{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/">SDOC</a>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/queue">Review Queue</a>
+    <a href="/queue?status=NEEDS_REVIEW">Needs Review</a>
+    <a href="/export/submission.json">Export submission.json</a>
+    <a href="/export/flagged.csv">Export flagged.csv</a>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>
