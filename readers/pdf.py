@@ -9,10 +9,16 @@ from readers.dispatch import register
 
 MIN_TEXT_LEN = 40
 MAX_PAGES = 5
+MAX_TEXT_PAGES = 200
+MAX_TEXT_CHARS = 100_000
 
 
 def read_pdf(data: bytes, role: str, filename: str) -> DocumentExtraction:
-    text = _extract_text(data)
+    text, truncated = _extract_text(data)
+    if truncated:
+        # Can't confidently claim we read the whole document — escalate
+        # rather than silently sending a truncated/costly prompt to Gemini.
+        return DocumentExtraction(role=role, filename=filename, doc_kind="UNKNOWN", readable=False)
     if len(text) >= MIN_TEXT_LEN:
         return extract_from_text(data, text, role, filename)
 
@@ -22,13 +28,16 @@ def read_pdf(data: bytes, role: str, filename: str) -> DocumentExtraction:
     return extract_from_images(data, images, role, filename)
 
 
-def _extract_text(data: bytes) -> str:
+def _extract_text(data: bytes) -> tuple[str, bool]:
     try:
         with pdfplumber.open(io.BytesIO(data)) as pdf:
-            parts = [page.extract_text() or "" for page in pdf.pages]
-        return "\n".join(parts).strip()
+            page_count_truncated = len(pdf.pages) > MAX_TEXT_PAGES
+            parts = [page.extract_text() or "" for page in pdf.pages[:MAX_TEXT_PAGES]]
+        text = "\n".join(parts).strip()
+        char_truncated = len(text) > MAX_TEXT_CHARS
+        return text[:MAX_TEXT_CHARS], (page_count_truncated or char_truncated)
     except Exception:
-        return ""
+        return "", False
 
 
 def _render_pages_to_png(data: bytes, dpi: int = 200) -> list[bytes]:

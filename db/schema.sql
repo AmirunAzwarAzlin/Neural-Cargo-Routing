@@ -1,6 +1,14 @@
 -- SDOC schema. RLS is enabled on every table with no anon/authenticated
 -- policies: only the server-side Supabase service key (which bypasses RLS)
 -- can read or write. Never ship the service key to a browser.
+--
+-- Known follow-ups not addressed here (SEC-05): the app's field correction
+-- and its audit-row insert are two separate API calls, not one DB
+-- transaction — a crash between them could correct a field with no audit
+-- record. A `correct_field_with_audit(...)` RPC function would close that
+-- gap. Likewise the app currently uses the full service_role key for every
+-- write; a least-privilege role scoped to just the tables/columns the
+-- dashboard needs would reduce blast radius if that key ever leaked.
 
 create extension if not exists pgcrypto;
 
@@ -99,10 +107,14 @@ create table if not exists comparisons (
 alter table comparisons enable row level security;
 create unique index if not exists comparisons_email_id_idx on comparisons(email_id);
 
--- Append-only audit trail: no update/delete policy is ever granted.
+-- Append-only audit trail. RLS alone does not protect this: the server-side
+-- service_role key bypasses RLS by design, so the real guard is the trigger
+-- below (triggers fire regardless of RLS bypass). "on delete restrict"
+-- (rather than cascade) means an email can't be deleted out from under its
+-- audit history either.
 create table if not exists review_actions (
     id uuid primary key default gen_random_uuid(),
-    email_id text not null references emails(email_id) on delete cascade,
+    email_id text not null references emails(email_id) on delete restrict,
     actor text not null,
     action text not null check (action in ('confirm','correct','reject')),
     field text,
@@ -113,6 +125,22 @@ create table if not exists review_actions (
 );
 alter table review_actions enable row level security;
 create index if not exists review_actions_email_id_idx on review_actions(email_id);
+
+create or replace function review_actions_block_mutation() returns trigger as $$
+begin
+    raise exception 'review_actions is append-only: % is not permitted', tg_op;
+end;
+$$ language plpgsql;
+
+drop trigger if exists review_actions_no_update on review_actions;
+create trigger review_actions_no_update
+    before update on review_actions
+    for each row execute function review_actions_block_mutation();
+
+drop trigger if exists review_actions_no_delete on review_actions;
+create trigger review_actions_no_delete
+    before delete on review_actions
+    for each row execute function review_actions_block_mutation();
 
 create table if not exists gemini_cache (
     cache_key text primary key,
@@ -131,3 +159,9 @@ alter table documents add column if not exists doc_kind_method text not null def
 alter table comparisons add column if not exists review_status text not null default 'pending';
 alter table comparisons add column if not exists reviewed_by text;
 alter table comparisons add column if not exists reviewed_at timestamptz;
+
+-- BUG-05/SEC-05: an email must not be deletable out from under its audit
+-- trail (constraint name is Postgres's default single-column FK naming).
+alter table review_actions drop constraint if exists review_actions_email_id_fkey;
+alter table review_actions add constraint review_actions_email_id_fkey
+    foreign key (email_id) references emails(email_id) on delete restrict;

@@ -92,6 +92,31 @@ def test_require_csrf_skips_check_in_no_auth_mode():
     require_csrf("", "")  # empty session (ALLOW_NO_AUTH mode) must not raise
 
 
+def test_session_token_round_trips_reviewer_name(monkeypatch):
+    from app.auth import make_session_token, reviewer_name_from_session
+
+    monkeypatch.setattr(settings, "session_secret", "test-secret")
+    token = make_session_token(reviewer_name="Alice Tan")
+
+    assert reviewer_name_from_session(token) == "Alice Tan"
+
+
+def test_session_token_reviewer_name_survives_dots_and_unicode(monkeypatch):
+    from app.auth import make_session_token, reviewer_name_from_session
+
+    monkeypatch.setattr(settings, "session_secret", "test-secret")
+    token = make_session_token(reviewer_name="a.b.c 田中")
+
+    assert reviewer_name_from_session(token) == "a.b.c 田中"
+
+
+def test_reviewer_name_from_session_falls_back_when_absent(monkeypatch):
+    from app.auth import reviewer_name_from_session
+
+    monkeypatch.setattr(settings, "session_secret", "test-secret")
+    assert reviewer_name_from_session("") == "reviewer"
+
+
 def test_rate_limit_blocks_after_threshold():
     from app.auth import LOGIN_RATE_LIMIT, check_rate_limit, record_login_attempt
 

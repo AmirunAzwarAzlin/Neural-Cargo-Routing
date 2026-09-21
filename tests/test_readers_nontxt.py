@@ -77,10 +77,70 @@ def test_xlsx_reader_marks_unreadable_on_corrupt_bytes():
     assert result.readable is False
 
 
+def test_xlsx_reader_skips_hidden_sheets(monkeypatch):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Visible"
+    ws["A1"] = "Shipper"
+    hidden = wb.create_sheet("Hidden")
+    hidden.sheet_state = "hidden"
+    hidden["A1"] = "SECRET DEFECT VALUE"
+    buf = io.BytesIO()
+    wb.save(buf)
+    data = buf.getvalue()
+
+    captured = {}
+
+    def fake_extract_from_text(document_bytes, document_text, role, filename):
+        captured["text"] = document_text
+        return DocumentExtraction(role=role, filename=filename, doc_kind="SI", readable=True)
+
+    import readers.xlsx as xlsx_reader
+    monkeypatch.setattr(xlsx_reader, "extract_from_text", fake_extract_from_text)
+
+    xlsx_reader.read_xlsx(data, "SI", "att.xlsx")
+
+    assert "SECRET DEFECT VALUE" not in captured["text"]
+    assert "Visible!A1: Shipper" in captured["text"]
+
+
+def test_xlsx_reader_escalates_when_cell_count_exceeds_cap(monkeypatch):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for i in range(5):
+        ws.cell(row=i + 1, column=1, value=f"v{i}")
+    buf = io.BytesIO()
+    wb.save(buf)
+    data = buf.getvalue()
+
+    import readers.xlsx as xlsx_reader
+    monkeypatch.setattr(xlsx_reader, "MAX_CELLS", 2)
+
+    result = xlsx_reader.read_xlsx(data, "SI", "att.xlsx")
+
+    assert result.readable is False
+    assert result.doc_kind == "UNKNOWN"
+
+
+def test_docx_reader_rejects_zip_bomb(monkeypatch):
+    import readers.docx as docx_reader
+    from readers.zip_safety import UnsafeZipError
+
+    def boom(data, **kwargs):
+        raise UnsafeZipError("too big")
+
+    monkeypatch.setattr(docx_reader, "check_zip_bomb_safety", boom)
+
+    result = docx_reader.read_docx(b"PK\x03\x04fake", "SI", "att.docx")
+
+    assert result.readable is False
+    assert result.doc_kind == "UNKNOWN"
+
+
 def test_pdf_reader_uses_text_path_when_text_present(monkeypatch):
     import readers.pdf as pdf_reader
 
-    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: "Shipper: TEST CO\n" * 5)
+    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: ("Shipper: TEST CO\n" * 5, False))
     called = {}
 
     def fake_extract_from_text(document_bytes, document_text, role, filename):
@@ -97,7 +157,7 @@ def test_pdf_reader_uses_text_path_when_text_present(monkeypatch):
 def test_pdf_reader_falls_back_to_vision_when_no_text(monkeypatch):
     import readers.pdf as pdf_reader
 
-    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: "")
+    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: ("", False))
     monkeypatch.setattr(pdf_reader, "_render_pages_to_png", lambda data: [b"fake-png-bytes"])
     called = {}
 
@@ -112,10 +172,21 @@ def test_pdf_reader_falls_back_to_vision_when_no_text(monkeypatch):
     assert result.doc_kind == "BL"
 
 
+def test_pdf_reader_escalates_when_text_is_truncated(monkeypatch):
+    import readers.pdf as pdf_reader
+
+    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: ("Shipper: TEST CO\n" * 5, True))
+
+    result = pdf_reader.read_pdf(b"fake-pdf-bytes", "SI", "att.pdf")
+
+    assert result.readable is False
+    assert result.doc_kind == "UNKNOWN"
+
+
 def test_pdf_reader_unreadable_when_no_text_and_no_images(monkeypatch):
     import readers.pdf as pdf_reader
 
-    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: "")
+    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: ("", False))
     monkeypatch.setattr(pdf_reader, "_render_pages_to_png", lambda data: [])
 
     result = pdf_reader.read_pdf(b"corrupt-bytes", "SI", "att.pdf")

@@ -86,7 +86,7 @@ def test_correct_doc_lets_human_override_unreadable_and_decide_honours_it():
     _seed_comparable_email(client, "email_A", si_kwargs={"doc_kind": "UNKNOWN", "readable": False})
     si_doc_id = next(r["id"] for r in client.table("documents").rows if r["role"] == "SI")
 
-    queries.correct_doc(client, si_doc_id, doc_kind="SI", readable=True)
+    queries.correct_doc(client, "email_A", si_doc_id, doc_kind="SI", readable=True)
     result = queries.apply_review_action(client, "email_A", actor="alice", action="correct", field="doc_kind", reason="")
 
     assert result["status"] == "OK"

@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 
 from config import settings
+from core.extract_rules import detect_doc_kind
 from core.models import COMPARED_FIELDS, DecidedBy, DocumentExtraction, ExtractedField, FieldState
 from llm.prompts import PROMPT_VERSION, SYSTEM_INSTRUCTION, build_text_extraction_prompt, build_vision_extraction_prompt
 from llm.schemas import GeminiExtraction
@@ -91,6 +92,20 @@ def _generate_structured(contents: list) -> GeminiExtraction:
     return GeminiExtraction.model_validate_json(resp.text)
 
 
+def _cross_checked_doc_kind(claimed_kind: str, source_text: str | None) -> str:
+    """Gemini's doc_kind is untrusted (it's derived from document content it
+    was told may contain injected instructions). Where the text has a
+    deterministic, non-LLM header signal, require it to agree; a specific
+    disagreement is treated as "we don't actually know" rather than trusting
+    the LLM's say-so."""
+    if source_text is None:
+        return claimed_kind
+    deterministic_kind = detect_doc_kind(source_text)
+    if deterministic_kind not in ("OTHER", "UNKNOWN") and deterministic_kind != claimed_kind:
+        return "UNKNOWN"
+    return claimed_kind
+
+
 def _build_document_extraction(
     extraction: GeminiExtraction, role: str, filename: str, source_text: str | None
 ) -> DocumentExtraction:
@@ -100,7 +115,7 @@ def _build_document_extraction(
         if fv.value is None:
             continue
         if source_text is not None:
-            if not evidence_supports_value(source_text, fv.evidence, fv.value):
+            if not evidence_supports_value(source_text, fv.evidence, fv.value, field=field):
                 continue  # discard low-confidence / unvalidated field
         fields[field] = ExtractedField(
             field=field,
@@ -111,10 +126,12 @@ def _build_document_extraction(
             confidence=0.9,
             evidence_quote=fv.evidence,
         )
+    doc_kind = extraction.doc_kind if extraction.readable else "UNKNOWN"
+    doc_kind = _cross_checked_doc_kind(doc_kind, source_text)
     return DocumentExtraction(
         role=role,
         filename=filename,
-        doc_kind=extraction.doc_kind if extraction.readable else "UNKNOWN",
+        doc_kind=doc_kind,
         readable=extraction.readable,
         fields=fields,
         raw_text=source_text,

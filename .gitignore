@@ -19,3 +19,4 @@ gemini_cache/
 
 .vercel
 .env*
+!.env.example

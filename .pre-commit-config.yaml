@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: check-no-secrets
+        name: Block secrets and sensitive paths
+        entry: python scripts/check_no_secrets.py
+        language: system
+        pass_filenames: false
+        always_run: true

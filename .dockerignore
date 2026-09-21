@@ -6,6 +6,10 @@ gemini_cache/
 __pycache__/
 *.pyc
 .pytest_cache/
-.env
+.env*
+!.env.example
 submission.json
 *.log
+tests/
+.pre-commit-config.yaml
+.github/

@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # check_no_secrets.py needs staged/history access
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Block secrets and sensitive paths
+        run: |
+          # check_no_secrets.py scans the *staged* set; stage everything so
+          # CI checks the whole checkout, not just a (normally empty) index.
+          git add -A
+          python scripts/check_no_secrets.py
+
+      - name: Run tests
+        run: pytest -q
+
+      - name: Audit dependencies for known CVEs
+        run: pip-audit -r requirements.txt

@@ -10,7 +10,8 @@
   <h1>SDOC</h1>
   <p class="muted">Shipping Document Verification — reviewer sign-in</p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  <input type="password" name="password" placeholder="Dashboard password" autofocus required>
+  <input type="text" name="reviewer_name" placeholder="Your name (for the audit trail)" autofocus required maxlength="100">
+  <input type="password" name="password" placeholder="Dashboard password" required>
   <button type="submit">Sign in</button>
 </form>
 </body>

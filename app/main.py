@@ -18,6 +18,7 @@ from app.auth import (
     record_login_attempt,
     require_auth,
     require_csrf,
+    reviewer_name_from_session,
 )
 from config import settings
 from storage.supabase_store import fetch_all
@@ -55,8 +56,9 @@ def _client_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-def _verify_csrf(csrf_token: str = Form(...), session: str = Depends(require_auth)) -> None:
+def _verify_csrf(csrf_token: str = Form(...), session: str = Depends(require_auth)) -> str:
     require_csrf(csrf_token, session)
+    return session
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -65,7 +67,7 @@ def login_form(request: Request):
 
 
 @app.post("/login")
-def login_submit(request: Request, password: str = Form(...)):
+def login_submit(request: Request, password: str = Form(...), reviewer_name: str = Form("reviewer")):
     client_key = _client_key(request)
     if not check_rate_limit(client_key):
         return templates.TemplateResponse(
@@ -79,7 +81,7 @@ def login_submit(request: Request, password: str = Form(...)):
         resp = RedirectResponse(url="/", status_code=303)
         resp.set_cookie(
             COOKIE_NAME,
-            make_session_token(),
+            make_session_token(reviewer_name=(reviewer_name or "reviewer").strip()[:100]),
             httponly=True,
             secure=True,
             samesite="lax",
@@ -142,11 +144,14 @@ def correct(
     field: str = Form(...),
     new_value: str = Form(...),
     reason: str = Form(""),
-    _csrf: None = Depends(_verify_csrf),
+    session: str = Depends(_verify_csrf),
 ):
     c = queries.client()
-    queries.correct_field(c, document_id, field, new_value)
-    queries.apply_review_action(c, email_id, actor="human_reviewer", action="correct", field=field, reason=reason)
+    actor = reviewer_name_from_session(session) if session else "human_reviewer"
+    old_value = queries.correct_field(c, email_id, document_id, field, new_value)
+    queries.apply_review_action(
+        c, email_id, actor=actor, action="correct", field=field, reason=reason, field_old_value=old_value
+    )
     return RedirectResponse(url=f"/email/{email_id}", status_code=303)
 
 
@@ -156,27 +161,30 @@ def correct_doc(
     document_id: str = Form(...),
     doc_kind: str = Form(...),
     readable: str = Form(""),
-    _csrf: None = Depends(_verify_csrf),
+    session: str = Depends(_verify_csrf),
 ):
     c = queries.client()
-    queries.correct_doc(c, document_id, doc_kind=doc_kind, readable=readable == "on")
+    actor = reviewer_name_from_session(session) if session else "human_reviewer"
+    queries.correct_doc(c, email_id, document_id, doc_kind=doc_kind, readable=readable == "on")
     queries.apply_review_action(
-        c, email_id, actor="human_reviewer", action="correct", field="doc_kind", reason=""
+        c, email_id, actor=actor, action="correct", field="doc_kind", reason=""
     )
     return RedirectResponse(url=f"/email/{email_id}", status_code=303)
 
 
 @app.post("/email/{email_id}/confirm")
-def confirm(email_id: str, reason: str = Form(""), _csrf: None = Depends(_verify_csrf)):
+def confirm(email_id: str, reason: str = Form(""), session: str = Depends(_verify_csrf)):
     c = queries.client()
-    queries.apply_review_action(c, email_id, actor="human_reviewer", action="confirm", field=None, reason=reason)
+    actor = reviewer_name_from_session(session) if session else "human_reviewer"
+    queries.apply_review_action(c, email_id, actor=actor, action="confirm", field=None, reason=reason)
     return RedirectResponse(url=f"/email/{email_id}", status_code=303)
 
 
 @app.post("/email/{email_id}/reject")
-def reject(email_id: str, reason: str = Form(""), _csrf: None = Depends(_verify_csrf)):
+def reject(email_id: str, reason: str = Form(""), session: str = Depends(_verify_csrf)):
     c = queries.client()
-    queries.apply_review_action(c, email_id, actor="human_reviewer", action="reject", field=None, reason=reason)
+    actor = reviewer_name_from_session(session) if session else "human_reviewer"
+    queries.apply_review_action(c, email_id, actor=actor, action="reject", field=None, reason=reason)
     return RedirectResponse(url=f"/email/{email_id}", status_code=303)
 
 

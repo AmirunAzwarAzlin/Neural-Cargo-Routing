@@ -123,7 +123,7 @@ File type is detected by magic bytes (`readers/filetype.py`), never by filename 
 
 ```bash
 python -m venv .venv && source .venv/Scripts/activate   # or .venv/bin/activate on Linux/Mac
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # requirements.txt + pytest/httpx/pip-audit; app image installs only requirements.txt
 cp .env.example .env   # fill in SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY, DASHBOARD_PASSWORD, SESSION_SECRET
 
 # apply db/schema.sql to your Supabase project (SQL editor, or supabase CLI)
@@ -132,10 +132,13 @@ python scripts/run_pipeline.py --out submission.json          # local only
 python scripts/run_pipeline.py --out submission.json --persist  # also writes to Supabase
 python scripts/validate_submission.py submission.json
 python scripts/evaluate.py            # dev-set metrics
-pytest -q                             # 46 tests
+pytest -q                             # 129 tests
+pip-audit -r requirements.txt         # check for known CVEs in pinned floors
 
 uvicorn app.main:app --reload         # dashboard at http://localhost:8000, password in .env
 ```
+
+`requirements.txt` pins security floors (`pdfminer.six`, `python-multipart`) but otherwise uses `>=`, not exact versions — for a fully reproducible, hash-pinned install, generate a lockfile in an environment matching the Dockerfile's Python version (3.12): `pip install pip-tools && pip-compile --generate-hashes -o requirements.lock.txt requirements.txt`, then `pip install -r requirements.lock.txt`. Not generated here since this dev environment runs a different Python version and a lockfile pinned under the wrong version can reference wheel hashes that don't exist for the target runtime.
 
 `core/` has no network or DB imports and is fully unit-testable on its own; `readers/` and `llm/` are the only modules that touch the network (Gemini), and `storage/` is the only module that touches Supabase. The pipeline writes a valid `submission.json` even if Supabase is completely unreachable — `--persist` is opt-in.
 

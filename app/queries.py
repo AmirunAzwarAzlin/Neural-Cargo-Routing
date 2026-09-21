@@ -8,6 +8,7 @@ from supabase import Client
 from config import RULES_VERSION
 from core.decide import decide
 from core.models import COMPARED_FIELDS, DocumentExtraction, ExtractedField, FieldState
+from llm.schemas import DOC_KINDS
 from storage.supabase_store import DEFAULT_PAGE_SIZE, fetch_all, get_client, insert_review_action
 
 PAGE_SIZE = DEFAULT_PAGE_SIZE
@@ -138,16 +139,35 @@ def _doc_extraction_from_rows(doc_row: dict, field_rows: list[dict]) -> Document
     )
 
 
-def correct_field(c: Client, document_id: str, field: str, new_value: str) -> None:
-    """Human overrides one extracted field's value on one document (SI or BL)."""
-    normalized = None
+MAX_CORRECTION_VALUE_LEN = 2000
+
+
+def _document_belongs_to_email(c: Client, email_id: str, document_id: str) -> bool:
+    rows = c.table("documents").select("id,email_id").eq("id", document_id).execute().data
+    return bool(rows) and rows[0]["email_id"] == email_id
+
+
+def correct_field(c: Client, email_id: str, document_id: str, field: str, new_value: str) -> Optional[str]:
+    """Human overrides one extracted field's value on one document (SI or BL).
+
+    Returns the previous raw_value (or None), so callers can put it in the
+    audit trail instead of only the before/after comparison verdict.
+    """
+    if field not in COMPARED_FIELDS:
+        raise ValueError(f"unknown field: {field!r}")
+    if len(new_value) > MAX_CORRECTION_VALUE_LEN:
+        raise ValueError(f"value exceeds {MAX_CORRECTION_VALUE_LEN} characters")
+    if not _document_belongs_to_email(c, email_id, document_id):
+        raise ValueError("document does not belong to this email")
+
     from core.normalize import normalize_field
 
     normalized = normalize_field(field, new_value)
     existing = (
-        c.table("extracted_fields").select("id").eq("document_id", document_id).eq("field", field)
+        c.table("extracted_fields").select("id,raw_value").eq("document_id", document_id).eq("field", field)
         .execute().data
     )
+    old_value = existing[0]["raw_value"] if existing else None
     payload = {
         "document_id": document_id,
         "field": field,
@@ -163,13 +183,18 @@ def correct_field(c: Client, document_id: str, field: str, new_value: str) -> No
         c.table("extracted_fields").update(payload).eq("id", existing[0]["id"]).execute()
     else:
         c.table("extracted_fields").insert(payload).execute()
+    return old_value
 
 
-def correct_doc(c: Client, document_id: str, doc_kind: str, readable: bool) -> None:
+def correct_doc(c: Client, email_id: str, document_id: str, doc_kind: str, readable: bool) -> None:
     """Human overrides one document's doc_kind/readable classification —
     the only way to unblock the 'unreadable'/'wrong_doc_type' NEEDS_REVIEW
     reasons, which decide() short-circuits on before it ever looks at any
     extracted field."""
+    if doc_kind not in DOC_KINDS:
+        raise ValueError(f"unknown doc_kind: {doc_kind!r}")
+    if not _document_belongs_to_email(c, email_id, document_id):
+        raise ValueError("document does not belong to this email")
     c.table("documents").update({
         "doc_kind": doc_kind,
         "readable": readable,
@@ -184,6 +209,7 @@ def apply_review_action(
     action: str,
     field: Optional[str],
     reason: Optional[str],
+    field_old_value: Optional[str] = None,
 ) -> dict:
     detail = get_email_detail(c, email_id)
     documents = detail["documents"]
@@ -191,6 +217,7 @@ def apply_review_action(
     bl_row = next((d for d in documents if d["role"] == "BL"), None)
 
     before_comparison = detail["comparison"]
+    before_audit = {"comparison": before_comparison, "field_old_value": field_old_value}
 
     if action == "correct" and si_row and bl_row:
         # A correction changed extracted data (a field value or a document's
@@ -225,5 +252,5 @@ def apply_review_action(
         }).eq("email_id", email_id).execute()
         after_comparison = before_comparison
 
-    insert_review_action(c, email_id, actor, action, field, before_comparison, after_comparison, reason)
+    insert_review_action(c, email_id, actor, action, field, before_audit, after_comparison, reason)
     return after_comparison
