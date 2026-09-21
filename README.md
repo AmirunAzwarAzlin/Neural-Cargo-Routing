@@ -124,7 +124,7 @@ File type is detected by magic bytes (`readers/filetype.py`), never by filename 
 ```bash
 python -m venv .venv && source .venv/Scripts/activate   # or .venv/bin/activate on Linux/Mac
 pip install -r requirements.txt
-cp .env.example .env   # fill in SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY, DASHBOARD_PASSWORD
+cp .env.example .env   # fill in SUPABASE_URL, SUPABASE_SERVICE_KEY, GEMINI_API_KEY, DASHBOARD_PASSWORD, SESSION_SECRET
 
 # apply db/schema.sql to your Supabase project (SQL editor, or supabase CLI)
 

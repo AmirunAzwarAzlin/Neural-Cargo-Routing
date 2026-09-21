@@ -71,3 +71,4 @@ button { cursor: pointer; background: var(--accent); border-color: var(--accent)
 .login-body { display: flex; align-items: center; justify-content: center; height: 100vh; background: var(--bg); color: var(--text); }
 .login-card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; display: flex; flex-direction: column; gap: 0.8rem; width: 300px; }
 .login-card h1 { margin: 0; }
+.login-card .error { color: var(--mismatch); margin: 0; font-weight: 600; }

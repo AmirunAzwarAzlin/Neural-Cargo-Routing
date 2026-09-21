@@ -61,6 +61,7 @@
           <td class="evidence-quote">{{ f.evidence_quote or "" }}</td>
           <td>
             <form method="post" action="/email/{{ email_id }}/correct" class="inline-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
               <input type="hidden" name="document_id" value="{{ doc.id }}">
               <input type="hidden" name="field" value="{{ f.field }}">
               <input type="text" name="new_value" placeholder="corrected value" size="14">
@@ -78,10 +79,12 @@
 <section class="card">
   <h2>Reviewer actions</h2>
   <form method="post" action="/email/{{ email_id }}/confirm" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="text" name="reason" placeholder="reason (optional)">
     <button type="submit">Confirm result as-is</button>
   </form>
   <form method="post" action="/email/{{ email_id }}/reject" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="text" name="reason" placeholder="reason (optional)">
     <button type="submit">Reject / flag for follow-up</button>
   </form>

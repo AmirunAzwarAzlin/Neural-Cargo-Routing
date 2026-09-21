@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     enable_transaction_verification: bool = False
     dashboard_password: str = ""
     allow_no_auth: bool = False
+    session_secret: str = ""
     data_dir: str = "data"
 
 
