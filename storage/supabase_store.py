@@ -13,6 +13,27 @@ def get_client() -> Client:
     return create_client(settings.supabase_url, settings.supabase_service_key)
 
 
+DEFAULT_PAGE_SIZE = 1000
+
+
+def fetch_all(build_query, page_size: int = DEFAULT_PAGE_SIZE) -> list[dict]:
+    """Page a select query past Supabase/PostgREST's default max-rows cap.
+
+    `build_query` must return a *fresh* query object each call (e.g. a
+    lambda), since `.range()` is applied per page and query builders aren't
+    generally safe to reuse across multiple `.execute()` calls.
+    """
+    rows: list[dict] = []
+    start = 0
+    while True:
+        page = build_query().range(start, start + page_size - 1).execute().data
+        rows.extend(page)
+        if len(page) < page_size:
+            break
+        start += page_size
+    return rows
+
+
 def start_pipeline_run(client: Client, total_emails: int) -> str:
     row = client.table("pipeline_runs").insert({
         "rules_version": RULES_VERSION,
@@ -50,13 +71,13 @@ def persist_email_result(
         "attachments": email.get("attachments") or [],
     }).execute()
 
-    client.table("classifications").insert({
+    client.table("classifications").upsert({
         "email_id": result.email_id,
         "category": result.category.value,
         "confidence": 1.0,
         "decided_by": result.category_decided_by.value,
         "rationale": result.category_rationale,
-    }).execute()
+    }, on_conflict="email_id").execute()
 
     for doc in (result.si_doc, result.bl_doc):
         if doc is None:
@@ -81,7 +102,7 @@ def persist_email_result(
 
 def _persist_document(client: Client, email_id: str, doc: DocumentExtraction, attachment_bytes: dict[str, bytes]) -> dict:
     raw = attachment_bytes.get(doc.filename or "", b"")
-    row = client.table("documents").insert({
+    row = client.table("documents").upsert({
         "email_id": email_id,
         "role": doc.role,
         "filename": doc.filename,
@@ -89,7 +110,7 @@ def _persist_document(client: Client, email_id: str, doc: DocumentExtraction, at
         "doc_kind": doc.doc_kind,
         "readable": doc.readable,
         "text_dump": doc.raw_text,
-    }).execute()
+    }, on_conflict="email_id,role").execute()
     return row.data[0]
 
 
@@ -110,7 +131,7 @@ def _persist_fields(client: Client, document_id: str, doc: DocumentExtraction) -
         }
         for f in doc.fields.values()
     ]
-    client.table("extracted_fields").insert(rows).execute()
+    client.table("extracted_fields").upsert(rows, on_conflict="document_id,field").execute()
 
 
 def insert_review_action(

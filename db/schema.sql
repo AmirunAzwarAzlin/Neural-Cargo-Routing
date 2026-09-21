@@ -35,7 +35,7 @@ create table if not exists classifications (
     created_at timestamptz not null default now()
 );
 alter table classifications enable row level security;
-create index if not exists classifications_email_id_idx on classifications(email_id);
+create unique index if not exists classifications_email_id_idx on classifications(email_id);
 
 create table if not exists documents (
     id uuid primary key default gen_random_uuid(),
@@ -46,11 +46,15 @@ create table if not exists documents (
     detected_type text,
     doc_kind text not null default 'UNKNOWN',
     readable boolean not null default true,
+    -- how doc_kind/readable were determined; lets a human override an
+    -- unreadable/wrong_doc_type classification (see BUG-06 review workflow)
+    doc_kind_method text not null default 'rule' check (doc_kind_method in ('rule','gemini','human')),
     text_dump text,
     created_at timestamptz not null default now()
 );
 alter table documents enable row level security;
 create index if not exists documents_email_id_idx on documents(email_id);
+create unique index if not exists documents_email_id_role_idx on documents(email_id, role);
 
 create table if not exists extracted_fields (
     id uuid primary key default gen_random_uuid(),
@@ -70,6 +74,7 @@ create table if not exists extracted_fields (
 );
 alter table extracted_fields enable row level security;
 create index if not exists extracted_fields_document_id_idx on extracted_fields(document_id);
+create unique index if not exists extracted_fields_document_id_field_idx on extracted_fields(document_id, field);
 
 create table if not exists comparisons (
     id uuid primary key default gen_random_uuid(),
@@ -82,6 +87,12 @@ create table if not exists comparisons (
     decided_by text not null check (decided_by in ('rule','gemini','human')),
     rules_version text not null,
     notes text,
+    -- human review outcome, independent of status: confirm/reject must
+    -- persist without silently overwriting the verdict being reviewed
+    -- (see BUG-06)
+    review_status text not null default 'pending' check (review_status in ('pending','confirmed','rejected','corrected')),
+    reviewed_by text,
+    reviewed_at timestamptz,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now()
 );
@@ -112,3 +123,11 @@ create table if not exists gemini_cache (
     created_at timestamptz not null default now()
 );
 alter table gemini_cache enable row level security;
+
+-- Migration-safe for databases where these tables already existed before
+-- the BUG-06/BUG-07 fixes (the CREATE TABLE blocks above only apply to a
+-- fresh database).
+alter table documents add column if not exists doc_kind_method text not null default 'rule';
+alter table comparisons add column if not exists review_status text not null default 'pending';
+alter table comparisons add column if not exists reviewed_by text;
+alter table comparisons add column if not exists reviewed_at timestamptz;

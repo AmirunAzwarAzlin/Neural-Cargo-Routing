@@ -20,6 +20,7 @@ from app.auth import (
     require_csrf,
 )
 from config import settings
+from storage.supabase_store import fetch_all
 
 app = FastAPI(
     title="SDOC Shipping Document Verification",
@@ -117,9 +118,20 @@ def queue(request: Request, status: str | None = None, reason: str | None = None
 def email_detail(request: Request, email_id: str, session: str = Depends(require_auth)):
     c = queries.client()
     detail = queries.get_email_detail(c, email_id)
+    doc_fields_display = {
+        doc["id"]: queries.fields_for_display(detail["doc_fields"].get(doc["id"], []))
+        for doc in detail["documents"]
+    }
     csrf_token = csrf_token_for_session(session) if session else ""
     return templates.TemplateResponse(
-        request, "detail.html", {"email_id": email_id, "d": detail, "csrf_token": csrf_token}
+        request,
+        "detail.html",
+        {
+            "email_id": email_id,
+            "d": detail,
+            "doc_fields_display": doc_fields_display,
+            "csrf_token": csrf_token,
+        },
     )
 
 
@@ -135,6 +147,22 @@ def correct(
     c = queries.client()
     queries.correct_field(c, document_id, field, new_value)
     queries.apply_review_action(c, email_id, actor="human_reviewer", action="correct", field=field, reason=reason)
+    return RedirectResponse(url=f"/email/{email_id}", status_code=303)
+
+
+@app.post("/email/{email_id}/correct_doc")
+def correct_doc(
+    email_id: str,
+    document_id: str = Form(...),
+    doc_kind: str = Form(...),
+    readable: str = Form(""),
+    _csrf: None = Depends(_verify_csrf),
+):
+    c = queries.client()
+    queries.correct_doc(c, document_id, doc_kind=doc_kind, readable=readable == "on")
+    queries.apply_review_action(
+        c, email_id, actor="human_reviewer", action="correct", field="doc_kind", reason=""
+    )
     return RedirectResponse(url=f"/email/{email_id}", status_code=303)
 
 
@@ -155,8 +183,8 @@ def reject(email_id: str, reason: str = Form(""), _csrf: None = Depends(_verify_
 @app.get("/export/submission.json")
 def export_submission(_: str = Depends(require_auth)):
     c = queries.client()
-    classifications = c.table("classifications").select("email_id,category").execute().data
-    comparisons = {row["email_id"]: row for row in c.table("comparisons").select("*").execute().data}
+    classifications = fetch_all(lambda: c.table("classifications").select("email_id,category"))
+    comparisons = {row["email_id"]: row for row in fetch_all(lambda: c.table("comparisons").select("*"))}
     cat_by_email = {row["email_id"]: row["category"] for row in classifications}
 
     submission = {}
@@ -181,7 +209,7 @@ def export_submission(_: str = Depends(require_auth)):
 @app.get("/export/flagged.csv")
 def export_flagged_csv(_: str = Depends(require_auth)):
     c = queries.client()
-    comparisons = c.table("comparisons").select("*").eq("status", "MISMATCH").execute().data
+    comparisons = fetch_all(lambda: c.table("comparisons").select("*").eq("status", "MISMATCH"))
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["email_id", "defect_fields"])

@@ -25,6 +25,7 @@
   {% else %}
     <p>No mismatch detected — all 7 fields agree.</p>
   {% endif %}
+  <p class="muted">Review status: <strong>{{ cmp.review_status or "pending" }}</strong>{% if cmp.reviewed_by %} by {{ cmp.reviewed_by }}{% endif %}{% if cmp.reviewed_at %} at {{ cmp.reviewed_at }}{% endif %}</p>
 </section>
 
 <section class="card">
@@ -48,11 +49,22 @@
 <section class="card">
   <h2>Extracted fields — evidence and method</h2>
   {% for doc in d.documents %}
-    <h3>{{ doc.role }} — {{ doc.filename or "(no attachment)" }} — doc_kind: {{ doc.doc_kind }} — readable: {{ doc.readable }}</h3>
+    <h3>{{ doc.role }} — {{ doc.filename or "(no attachment)" }} — doc_kind: {{ doc.doc_kind }} — readable: {{ doc.readable }} — classified by: {{ doc.doc_kind_method or "rule" }}</h3>
+    <form method="post" action="/email/{{ email_id }}/correct_doc" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="document_id" value="{{ doc.id }}">
+      <select name="doc_kind">
+        {% for k in ["SI", "BL", "PACKING_LIST", "COMMERCIAL_INVOICE", "CERT_OF_ORIGIN", "OTHER", "UNKNOWN"] %}
+          <option value="{{ k }}" {{ "selected" if doc.doc_kind == k else "" }}>{{ k }}</option>
+        {% endfor %}
+      </select>
+      <label><input type="checkbox" name="readable" {{ "checked" if doc.readable else "" }}> readable</label>
+      <button type="submit">Fix doc_kind/readable</button>
+    </form>
     <table class="evidence">
       <thead><tr><th>Field</th><th>Value</th><th>Source label</th><th>Method</th><th>Evidence</th><th>Correct</th></tr></thead>
       <tbody>
-      {% for f in d.doc_fields.get(doc.id, []) %}
+      {% for f in doc_fields_display.get(doc.id, []) %}
         <tr>
           <td>{{ f.field }}</td>
           <td>{{ f.raw_value if f.raw_value is not none else "(" + f.state + ")" }}</td>

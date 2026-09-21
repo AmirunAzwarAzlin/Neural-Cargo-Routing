@@ -7,8 +7,10 @@ from supabase import Client
 
 from config import RULES_VERSION
 from core.decide import decide
-from core.models import DocumentExtraction, ExtractedField, FieldState
-from storage.supabase_store import get_client, insert_review_action
+from core.models import COMPARED_FIELDS, DocumentExtraction, ExtractedField, FieldState
+from storage.supabase_store import DEFAULT_PAGE_SIZE, fetch_all, get_client, insert_review_action
+
+PAGE_SIZE = DEFAULT_PAGE_SIZE
 
 
 def client() -> Client:
@@ -16,9 +18,11 @@ def client() -> Client:
 
 
 def dashboard_summary(c: Client) -> dict:
-    comparisons = c.table("comparisons").select("*").execute().data
-    classifications = c.table("classifications").select("email_id,category,decided_by").execute().data
-    fields = c.table("extracted_fields").select("field,method").execute().data
+    comparisons = fetch_all(lambda: c.table("comparisons").select("*"), page_size=PAGE_SIZE)
+    classifications = fetch_all(
+        lambda: c.table("classifications").select("email_id,category,decided_by"), page_size=PAGE_SIZE
+    )
+    fields = fetch_all(lambda: c.table("extracted_fields").select("field,method"), page_size=PAGE_SIZE)
     runs = c.table("pipeline_runs").select("*").order("started_at", desc=True).limit(1).execute().data
 
     category_counts = Counter(row["category"] for row in classifications)
@@ -56,12 +60,15 @@ def dashboard_summary(c: Client) -> dict:
 
 
 def list_queue(c: Client, status: Optional[str] = None, reason: Optional[str] = None) -> list[dict]:
-    q = c.table("comparisons").select("*, emails(subject, from_addr)").order("email_id")
-    if status:
-        q = q.eq("status", status)
-    if reason:
-        q = q.eq("review_reason", reason)
-    return q.execute().data
+    def build():
+        q = c.table("comparisons").select("*, emails(subject, from_addr)").order("email_id")
+        if status:
+            q = q.eq("status", status)
+        if reason:
+            q = q.eq("review_reason", reason)
+        return q
+
+    return fetch_all(build, page_size=PAGE_SIZE)
 
 
 def get_email_detail(c: Client, email_id: str) -> dict:
@@ -88,6 +95,25 @@ def get_email_detail(c: Client, email_id: str) -> dict:
         "comparison": comparison[0] if comparison else None,
         "actions": actions,
     }
+
+
+def fields_for_display(field_rows: list[dict]) -> list[dict]:
+    """All COMPARED_FIELDS in canonical order, so a field Gemini discarded
+    or never found still gets a row (and a Fix form) instead of vanishing
+    from the detail page just because extracted_fields has no row for it."""
+    by_field = {r["field"]: r for r in field_rows}
+    return [
+        by_field.get(field) or {
+            "field": field,
+            "raw_value": None,
+            "normalized_value": None,
+            "state": "absent",
+            "source_label": None,
+            "method": None,
+            "evidence_quote": None,
+        }
+        for field in COMPARED_FIELDS
+    ]
 
 
 def _doc_extraction_from_rows(doc_row: dict, field_rows: list[dict]) -> DocumentExtraction:
@@ -139,6 +165,18 @@ def correct_field(c: Client, document_id: str, field: str, new_value: str) -> No
         c.table("extracted_fields").insert(payload).execute()
 
 
+def correct_doc(c: Client, document_id: str, doc_kind: str, readable: bool) -> None:
+    """Human overrides one document's doc_kind/readable classification —
+    the only way to unblock the 'unreadable'/'wrong_doc_type' NEEDS_REVIEW
+    reasons, which decide() short-circuits on before it ever looks at any
+    extracted field."""
+    c.table("documents").update({
+        "doc_kind": doc_kind,
+        "readable": readable,
+        "doc_kind_method": "human",
+    }).eq("id", document_id).execute()
+
+
 def apply_review_action(
     c: Client,
     email_id: str,
@@ -154,7 +192,10 @@ def apply_review_action(
 
     before_comparison = detail["comparison"]
 
-    if si_row and bl_row:
+    if action == "correct" and si_row and bl_row:
+        # A correction changed extracted data (a field value or a document's
+        # doc_kind/readable) — re-decide with it, and record that a human
+        # input drove this result.
         si_doc = _doc_extraction_from_rows(si_row, detail["doc_fields"][si_row["id"]])
         bl_doc = _doc_extraction_from_rows(bl_row, detail["doc_fields"][bl_row["id"]])
         new_comparison = decide(si_doc, bl_doc)
@@ -164,13 +205,24 @@ def apply_review_action(
             "has_defect": new_comparison.has_defect,
             "defect_fields": new_comparison.defect_fields,
             "per_field": [fc.model_dump(mode="json") for fc in new_comparison.per_field],
-            "decided_by": "rule",
+            "decided_by": "human",
             "rules_version": RULES_VERSION,
             "notes": new_comparison.notes,
+            "review_status": "corrected",
+            "reviewed_by": actor,
+            "reviewed_at": "now()",
             "updated_at": "now()",
         }).eq("email_id", email_id).execute()
         after_comparison = new_comparison.model_dump(mode="json")
     else:
+        # confirm / reject: record the human decision without silently
+        # recomputing and overwriting the verdict being confirmed/rejected.
+        review_status = "confirmed" if action == "confirm" else "rejected" if action == "reject" else "pending"
+        c.table("comparisons").update({
+            "review_status": review_status,
+            "reviewed_by": actor,
+            "reviewed_at": "now()",
+        }).eq("email_id", email_id).execute()
         after_comparison = before_comparison
 
     insert_review_action(c, email_id, actor, action, field, before_comparison, after_comparison, reason)
