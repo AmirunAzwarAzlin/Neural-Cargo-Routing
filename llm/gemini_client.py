@@ -3,6 +3,7 @@ sha256-keyed caching. The LLM never decides OK/MISMATCH/NEEDS_REVIEW — it only
 extracts field values with evidence; core/decide.py makes the deterministic call."""
 import hashlib
 import json
+import random
 import time
 from pathlib import Path
 
@@ -44,14 +45,30 @@ def _cache_put(key: str, value: dict) -> None:
     (CACHE_DIR / f"{key}.json").write_text(json.dumps(value), encoding="utf-8")
 
 
+def _client_error_status(exc: Exception) -> int | None:
+    """Best-effort extraction of an HTTP status code from an SDK exception,
+    without depending on a specific google-genai exception class."""
+    for attr in ("status_code", "code"):
+        value = getattr(exc, attr, None)
+        if isinstance(value, int):
+            return value
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if isinstance(status, int):
+        return status
+    return None
+
+
 def _call_with_retries(fn):
     last_err = None
     for attempt in range(MAX_RETRIES):
         try:
             return fn()
         except Exception as e:  # noqa: BLE001 - external API, broad catch is intentional
+            status = _client_error_status(e)
+            if status is not None and 400 <= status < 500:
+                raise  # auth/bad-request errors won't fix themselves on retry
             last_err = e
-            time.sleep(1.5 * (attempt + 1))
+            time.sleep(1.5 * (attempt + 1) + random.uniform(0, 0.5))
     raise last_err
 
 
