@@ -12,7 +12,8 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT))
 
 from config import settings
 from core.pipeline import process_email
@@ -39,7 +40,7 @@ def macro_f1(y_true: list[str], y_pred: list[str], labels: list[str]) -> tuple[f
 
 def main():
     data_dir = settings.data_dir
-    dev_labels = json.loads(Path("tests/dev_labels.json").read_text(encoding="utf-8"))
+    dev_labels = json.loads((REPO_ROOT / "tests" / "dev_labels.json").read_text(encoding="utf-8"))
     dev_labels.pop("_note", None)
 
     emails_by_id = {e["email_id"]: e for e in list_emails(data_dir)}

@@ -73,7 +73,10 @@ def list_queue(c: Client, status: Optional[str] = None, reason: Optional[str] = 
 
 
 def get_email_detail(c: Client, email_id: str) -> dict:
-    email = c.table("emails").select("*").eq("email_id", email_id).single().execute().data
+    # .single() raises (-> 500) when no row matches; select+index instead so
+    # an unknown email_id degrades to a normal, checkable None.
+    emails = c.table("emails").select("*").eq("email_id", email_id).execute().data
+    email = emails[0] if emails else None
     classification = (
         c.table("classifications").select("*").eq("email_id", email_id)
         .order("created_at", desc=True).limit(1).execute().data

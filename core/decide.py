@@ -21,11 +21,15 @@ def decide(si_doc: DocumentExtraction | None, bl_doc: DocumentExtraction | None)
     # kind" (e.g. non-.txt formats not yet supported, corrupt/0-byte files,
     # garbled scans). doc_kind="UNKNOWN" is our sentinel for "not yet read".
     if not si_doc.readable or not bl_doc.readable or si_doc.doc_kind == "UNKNOWN" or bl_doc.doc_kind == "UNKNOWN":
-        unreadable = "SI" if (not si_doc.readable or si_doc.doc_kind == "UNKNOWN") else "BL"
+        unreadable = []
+        if not si_doc.readable or si_doc.doc_kind == "UNKNOWN":
+            unreadable.append("SI")
+        if not bl_doc.readable or bl_doc.doc_kind == "UNKNOWN":
+            unreadable.append("BL")
         return ComparisonResult(
             status=Status.NEEDS_REVIEW,
             review_reason=ReviewReason.UNREADABLE,
-            notes=f"{unreadable} document could not be read.",
+            notes=f"{' and '.join(unreadable)} document(s) could not be read.",
             **base,
         )
 

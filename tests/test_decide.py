@@ -64,6 +64,16 @@ def test_unreadable_when_doc_kind_unknown():
     assert result.review_reason.value == "unreadable"
 
 
+def test_unreadable_names_both_documents_when_both_are_unreadable():
+    from core.models import DocumentExtraction
+
+    si = DocumentExtraction(role="SI", doc_kind="UNKNOWN", readable=False)
+    bl = DocumentExtraction(role="BL", doc_kind="UNKNOWN", readable=False)
+    result = decide(si, bl)
+    assert "SI" in result.notes
+    assert "BL" in result.notes
+
+
 def test_missing_value_when_field_blank():
     si = parse_txt_document(SI_TEXT, role="SI")
     bl = parse_txt_document(BL_TEXT_MISSING_WEIGHT, role="BL")

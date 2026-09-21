@@ -8,6 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import settings
+from core.models import COMPARED_FIELDS
 
 VALID_CATEGORIES = {"BL_COMPARISON", "SI_REQUEST", "INVOICE_QUERY", "GENERAL", "SPAM"}
 VALID_STATUSES = {"OK", "MISMATCH", "NEEDS_REVIEW"}
@@ -42,6 +43,15 @@ def validate(submission_path: str, sample_path: str) -> list[str]:
             errors.append(f"{eid}: invalid review_reason {entry['review_reason']!r}")
         if not isinstance(entry["defect_fields"], list):
             errors.append(f"{eid}: defect_fields is not a list")
+        else:
+            unknown = [f for f in entry["defect_fields"] if f not in COMPARED_FIELDS]
+            if unknown:
+                errors.append(f"{eid}: defect_fields has unknown field(s) {unknown}")
+            expected_order = [f for f in COMPARED_FIELDS if f in entry["defect_fields"]]
+            if not unknown and entry["defect_fields"] != expected_order:
+                errors.append(
+                    f"{eid}: defect_fields {entry['defect_fields']} not in canonical order {expected_order}"
+                )
         if not isinstance(entry["has_defect"], bool):
             errors.append(f"{eid}: has_defect is not a bool")
 

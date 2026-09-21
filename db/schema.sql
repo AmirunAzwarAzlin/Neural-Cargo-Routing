@@ -51,6 +51,9 @@ create table if not exists documents (
     role text not null check (role in ('SI','BL')),
     filename text,
     sha256 text,
+    -- reserved: intended for readers.filetype.detect()'s pdf/docx/xlsx/txt
+    -- result (distinct from doc_kind's SI/BL/... content classification),
+    -- but no code path writes it yet (BUG-16) — do not rely on it.
     detected_type text,
     doc_kind text not null default 'UNKNOWN',
     readable boolean not null default true,

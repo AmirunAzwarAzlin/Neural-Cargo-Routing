@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, StreamingResponse
@@ -29,8 +30,9 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
-templates = Jinja2Templates(directory="app/templates")
+_APP_DIR = Path(__file__).resolve().parent
+app.mount("/static", StaticFiles(directory=_APP_DIR / "static"), name="static")
+templates = Jinja2Templates(directory=_APP_DIR / "templates")
 
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -120,6 +122,8 @@ def queue(request: Request, status: str | None = None, reason: str | None = None
 def email_detail(request: Request, email_id: str, session: str = Depends(require_auth)):
     c = queries.client()
     detail = queries.get_email_detail(c, email_id)
+    if detail["email"] is None:
+        return HTMLResponse(content=f"<h1>404</h1><p>No such email: {email_id}</p>", status_code=404)
     doc_fields_display = {
         doc["id"]: queries.fields_for_display(detail["doc_fields"].get(doc["id"], []))
         for doc in detail["documents"]
@@ -214,6 +218,18 @@ def export_submission(_: str = Depends(require_auth)):
     return Response(content=json.dumps(submission, indent=2), media_type="application/json")
 
 
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value: str) -> str:
+    """Guard against CSV/spreadsheet formula injection: a cell starting with
+    =, +, -, @, tab or CR can execute as a formula when the export is later
+    opened in Excel/Sheets. Prefixing with a quote neutralizes it."""
+    if value and value[0] in _CSV_FORMULA_PREFIXES:
+        return "'" + value
+    return value
+
+
 @app.get("/export/flagged.csv")
 def export_flagged_csv(_: str = Depends(require_auth)):
     c = queries.client()
@@ -222,7 +238,10 @@ def export_flagged_csv(_: str = Depends(require_auth)):
     writer = csv.writer(buf)
     writer.writerow(["email_id", "defect_fields"])
     for row in comparisons:
-        writer.writerow([row["email_id"], ";".join(row["defect_fields"] or [])])
+        writer.writerow([
+            _csv_safe(row["email_id"]),
+            _csv_safe(";".join(row["defect_fields"] or [])),
+        ])
     buf.seek(0)
     return StreamingResponse(buf, media_type="text/csv", headers={
         "Content-Disposition": "attachment; filename=flagged.csv"

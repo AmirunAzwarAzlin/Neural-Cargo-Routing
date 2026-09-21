@@ -36,3 +36,23 @@ def test_mismatch_without_defect_fields_is_flagged(tmp_path):
     sub_path = _write(tmp_path, "submission.json", submission)
     errors = validate(sub_path, sample_path)
     assert any("MISMATCH" in e for e in errors)
+
+
+def test_defect_fields_with_unknown_field_name_is_flagged(tmp_path):
+    sample = {"email_001": {}}
+    submission = {"email_001": {"category": "BL_COMPARISON", "status": "MISMATCH", "review_reason": None,
+                                 "defect_fields": ["not_a_real_field"], "has_defect": True}}
+    sample_path = _write(tmp_path, "sample.json", sample)
+    sub_path = _write(tmp_path, "submission.json", submission)
+    errors = validate(sub_path, sample_path)
+    assert any("not_a_real_field" in e for e in errors)
+
+
+def test_defect_fields_out_of_canonical_order_is_flagged(tmp_path):
+    sample = {"email_001": {}}
+    submission = {"email_001": {"category": "BL_COMPARISON", "status": "MISMATCH", "review_reason": None,
+                                 "defect_fields": ["consignee", "shipper"], "has_defect": True}}
+    sample_path = _write(tmp_path, "sample.json", sample)
+    sub_path = _write(tmp_path, "submission.json", submission)
+    errors = validate(sub_path, sample_path)
+    assert any("order" in e.lower() for e in errors)

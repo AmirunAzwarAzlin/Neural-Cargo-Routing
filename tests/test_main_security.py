@@ -89,3 +89,14 @@ def test_logout_clears_cookie(client):
     resp = client.get("/logout")
     assert resp.status_code == 303
     assert resp.headers["location"] == "/login"
+
+
+def test_csv_safe_neutralizes_formula_injection_prefixes():
+    from app.main import _csv_safe
+
+    assert _csv_safe("=SUM(A1:A9)") == "'=SUM(A1:A9)"
+    assert _csv_safe("+1+1") == "'+1+1"
+    assert _csv_safe("-1") == "'-1"
+    assert _csv_safe("@cmd") == "'@cmd"
+    assert _csv_safe("shipper") == "shipper"
+    assert _csv_safe("") == ""
