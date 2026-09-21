@@ -2,6 +2,7 @@
 from core.extract_rules import parse_txt_document
 from core.models import DocumentExtraction
 from readers import filetype
+from readers.text_decode import decode_bytes
 from storage.local_files import read_attachment_bytes
 
 _NON_TXT_READERS = {}  # filled in by readers.pdf / readers.docx / readers.xlsx via register()
@@ -16,7 +17,7 @@ def read_document(data_dir: str, att_path: str, role: str) -> DocumentExtraction
     kind = filetype.detect(data)
 
     if kind == "txt":
-        text = data.decode("utf-8", errors="replace")
+        text = decode_bytes(data)
         return parse_txt_document(text, role, filename=att_path)
 
     reader = _NON_TXT_READERS.get(kind)

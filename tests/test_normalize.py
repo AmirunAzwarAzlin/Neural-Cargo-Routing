@@ -5,11 +5,23 @@ from core.normalize import (
     normalize_gross_weight_kg,
     normalize_name,
     normalize_port,
+    ports_match,
 )
 
 
 def test_normalize_name_case_and_punctuation():
     assert normalize_name("Moorim SP Co., Ltd") == normalize_name("MOORIM SP CO. LTD")
+
+
+def test_normalize_name_nfkc_normalizes_combining_characters():
+    # "E" + U+0301 COMBINING ACUTE ACCENT vs U+00C9 "E WITH ACUTE" - visually
+    # identical, different byte sequences, and a false mismatch if not
+    # normalized. Built via chr() to avoid the source file itself silently
+    # normalizing one form into the other.
+    precomposed = "SOCI" + chr(0xC9) + "T" + chr(0xC9)
+    decomposed = "SOCI" + "E" + chr(0x0301) + "T" + "E" + chr(0x0301)
+    assert decomposed != precomposed  # sanity: genuinely different byte sequences
+    assert normalize_name(precomposed) == normalize_name(decomposed)
 
 
 def test_normalize_port_strips_unlocode():
@@ -22,6 +34,30 @@ def test_normalize_port_different_names_do_not_match():
     a = normalize_port("PORT KLANG (WESTPORT), MALAYSIA (MYPKG)")
     b = normalize_port("PORT KLANG (NORTHPORT), MALAYSIA (MYPKG)")
     assert a != b
+
+
+def test_ports_match_same_name_and_code():
+    assert ports_match("SHANGHAI (CNSHA)", "SHANGHAI (CNSHA)")
+
+
+def test_ports_match_flags_code_only_change():
+    # same name, different UNLOCODE: a real defect the old name-only
+    # comparison silently hid.
+    assert not ports_match("SHANGHAI (CNSHA)", "SHANGHAI (CNSGH)")
+
+
+def test_ports_match_flags_name_change():
+    assert not ports_match("SHANGHAI (CNSHA)", "TOKYO (CNSHA)")
+
+
+def test_ports_match_tolerates_code_present_on_only_one_side():
+    # a code is supporting evidence, not a required field — its absence on
+    # one side alone must not itself trigger a mismatch.
+    assert ports_match("SHANGHAI (CNSHA)", "SHANGHAI")
+
+
+def test_ports_match_handles_code_dash_name_form():
+    assert ports_match("CNSHA - SHANGHAI", "SHANGHAI (CNSHA)")
 
 
 def test_normalize_container_count():

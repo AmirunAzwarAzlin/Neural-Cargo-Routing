@@ -82,7 +82,7 @@ flowchart TD
 
     M1 & M2 & M3 & M4 --> N[Human review:\nsee why, see evidence, correct or confirm]
     N --> O[Recompute: same deterministic\ncompare/decide code]
-    O --> P[(Supabase: emails, documents,\nextracted_fields, comparisons,\nreview_actions, gemini_cache)]
+    O --> P[(Supabase: emails, documents,\nextracted_fields, comparisons,\nreview_actions)]
     M5 & M6 --> P
     Z --> P
     P --> Q[Dashboard: funnel, per-field\ndiscrepancies, decision source,\nrun time, export submission.json]
@@ -153,7 +153,7 @@ uvicorn app.main:app --reload         # dashboard at http://localhost:8000, pass
 
 ## 6. Evaluation
 
-**Measured result** (full pipeline, `scripts/run_pipeline.py`, all 520 emails, real Gemini calls, Gemini responses cached by `sha256(bytes + prompt_version + model)`):
+**Measured result** (full pipeline, `scripts/run_pipeline.py`, all 520 emails, real Gemini calls, Gemini responses cached by `sha256(bytes + prompt_version + model + kind + role)`):
 
 | Metric | Value |
 |---|---|
@@ -220,7 +220,7 @@ The discriminator is the verb: *send* (operational request, nothing to check yet
 
 **Numeric tolerance.** `data/README.md` (the authoritative task definition for this competition) states no numeric tolerance for the comparison. **Decision:** exact equality after parsing units/separators — `container_count` sums `N x TYPE` groups (e.g. `1 x 40'HC + 2 x 20'GP`) into an integer, `gross_weight_kg` parses `KG`/`KGS`/`MT`/`M/T`/`TON(S)`/`TONNE(S)`/`LB(S)` into an exact `Decimal` kilogram value, detecting English (`1,234.50`) vs European (`1.234,50`) separator conventions (`core/normalize.py`). Either field returns `None` — never a guess — when the string has more than one distinct number or an unrecognised/missing unit; `core/compare.py` and `core/decide.py` route that to `NEEDS_REVIEW`/`missing_value` rather than silently comparing `None == None` as a match. If a future version of `data/README.md` specifies a tolerance, only `normalize.py`'s comparison call site needs to change.
 
-**Ports.** Compared by name only; a bracketed UNLOCODE (`(MYPKG)`) is stripped before comparison and never treated as the primary key, per the brief's warning that a defect can change the port name while the code stays identical.
+**Ports.** The name is the primary key (never a UNLOCODE alone), per the brief's warning that a defect can change the port name while the code stays identical — but a code present on *both* sides is also compared, since a code-only change (same name, different `(MYPKG)`-style UNLOCODE) is a real defect a name-only comparison would silently hide. A code present on only one side is not itself a mismatch, since it's supporting evidence rather than a required field. Also handles a leading `CODE - NAME` form, not just the trailing `NAME (CODE)` form. See `ports_match()` in `core/normalize.py`.
 
 **Names.** Casefold + strip punctuation + collapse whitespace only. Nothing else is folded — no legal-suffix removal, no word-order changes — because the dataset's actual defects (e.g. `email_004`: consignee silently changed from `EAST BRIGHT FZ-LLC` to `UAB NOVAKOPA`) are real company substitutions, not formatting noise, and over-normalizing risks hiding exactly that kind of defect.
 

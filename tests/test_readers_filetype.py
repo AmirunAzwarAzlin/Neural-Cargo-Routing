@@ -37,3 +37,22 @@ def test_detect_xlsx():
         zf.writestr("xl/workbook.xml", "<xml/>")
         zf.writestr("[Content_Types].xml", "<xml/>")
     assert detect(buf.getvalue()) == "xlsx"
+
+
+def test_detect_pdf_tolerates_leading_junk_bytes():
+    assert detect(b"\xef\xbb\xbf   \n%PDF-1.4\n...") == "pdf"
+
+
+def test_detect_utf16_text_not_misclassified_as_binary():
+    data = b"\xff\xfe" + "SHIPPING INSTRUCTION\nShipper: X\n".encode("utf-16-le")
+    assert detect(data) == "txt"
+
+
+def test_detect_checks_whole_file_for_nul_not_just_first_4096_bytes():
+    data = b"A" * 5000 + b"\x00" + b"B" * 100
+    assert detect(data) == "unknown"
+
+
+def test_detect_cp1252_text_with_accented_chars_is_still_text():
+    data = "SOCIÉTÉ GÉNÉRALE\nShipper: X\n".encode("cp1252")
+    assert detect(data) == "txt"

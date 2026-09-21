@@ -142,15 +142,11 @@ create trigger review_actions_no_delete
     before delete on review_actions
     for each row execute function review_actions_block_mutation();
 
-create table if not exists gemini_cache (
-    cache_key text primary key,
-    kind text not null,
-    model text not null,
-    prompt_version text not null,
-    response jsonb not null,
-    created_at timestamptz not null default now()
-);
-alter table gemini_cache enable row level security;
+-- No gemini_cache table: llm/gemini_client.py caches to a local gemini_cache/
+-- directory (falling back to a temp dir when that's not writable, e.g. a
+-- read-only serverless filesystem) instead. A Supabase-backed cache was
+-- considered but a local file cache is sufficient for this deployment
+-- shape and avoids a round-trip per extraction.
 
 -- Migration-safe for databases where these tables already existed before
 -- the BUG-06/BUG-07 fixes (the CREATE TABLE blocks above only apply to a
@@ -165,3 +161,7 @@ alter table comparisons add column if not exists reviewed_at timestamptz;
 alter table review_actions drop constraint if exists review_actions_email_id_fkey;
 alter table review_actions add constraint review_actions_email_id_fkey
     foreign key (email_id) references emails(email_id) on delete restrict;
+
+-- BUG-15: the gemini_cache table was never used by the app (see note above);
+-- drop it if an earlier deployment created it.
+drop table if exists gemini_cache;

@@ -1,6 +1,8 @@
 """Magic-byte file type detection. Never trust the filename extension."""
 
 MAX_BYTES = 25 * 1024 * 1024  # 25 MB safety cap
+PDF_HEADER_SEARCH_WINDOW = 1024  # some real-world PDFs have junk/a BOM before "%PDF-"
+_UTF16_BOMS = (b"\xff\xfe", b"\xfe\xff")
 
 
 class UnsupportedFileError(Exception):
@@ -13,7 +15,7 @@ def detect(data: bytes) -> str:
         return "unknown"
     if not data:
         return "unknown"
-    if data.startswith(b"%PDF-"):
+    if b"%PDF-" in data[:PDF_HEADER_SEARCH_WINDOW]:
         return "pdf"
     if data[:4] == b"PK\x03\x04":
         # docx/xlsx are both zip containers; distinguish by internal manifest names.
@@ -40,15 +42,14 @@ def _detect_zip_office(data: bytes) -> str:
 
 
 def _looks_like_text(data: bytes) -> bool:
-    sample = data[:4096]
-    if b"\x00" in sample:
-        return False
-    try:
-        sample.decode("utf-8")
+    """latin-1 never fails to decode, so "try to decode it" alone can't
+    distinguish text from binary garbage. Use an actual content signal
+    instead: a NUL byte anywhere (UTF-16 files aside) or more than a
+    trace of control characters means binary.
+    """
+    if data[:2] in _UTF16_BOMS:
         return True
-    except UnicodeDecodeError:
-        try:
-            sample.decode("latin-1")
-            return True
-        except UnicodeDecodeError:
-            return False
+    if b"\x00" in data:
+        return False
+    control_bytes = sum(1 for b in data if b < 0x20 and b not in (0x09, 0x0A, 0x0D))
+    return control_bytes / len(data) < 0.01

@@ -72,6 +72,21 @@ def test_missing_value_when_field_blank():
     assert result.review_reason.value == "missing_value"
 
 
+def test_missing_value_surfaces_a_known_mismatch_hidden_by_the_blank_field():
+    # A blank weight forces NEEDS_REVIEW/missing_value (has_defect stays
+    # false per the competition's submission.json shape), but a real
+    # consignee defect elsewhere must not become invisible outside per_field.
+    si = parse_txt_document(SI_TEXT, role="SI")
+    bl = parse_txt_document(
+        BL_TEXT_MISSING_WEIGHT.replace("Consignee: B CO", "Consignee: EVIL CO"), role="BL"
+    )
+    result = decide(si, bl)
+    assert result.status.value == "NEEDS_REVIEW"
+    assert result.has_defect is False
+    assert result.defect_fields == []
+    assert "consignee" in result.notes
+
+
 def test_mismatch_detects_multi_type_container_count_change():
     si = parse_txt_document(SI_TEXT.replace("3 x 40'HC", "1 x 40'HC + 2 x 20'GP"), role="SI")
     bl = parse_txt_document(BL_TEXT_MATCH.replace("3 x 40'HC", "1 x 40'HC + 5 x 20'GP"), role="BL")
@@ -95,6 +110,14 @@ def test_unparseable_values_on_both_sides_do_not_silently_match():
     result = decide(si, bl)
     assert result.status.value == "NEEDS_REVIEW"
     assert result.review_reason.value == "missing_value"
+
+
+def test_mismatch_detects_port_unlocode_only_change():
+    si = parse_txt_document(SI_TEXT.replace("Port of Loading: SINGAPORE", "Port of Loading: SHANGHAI (CNSHA)"), role="SI")
+    bl = parse_txt_document(BL_TEXT_MATCH.replace("Port of Loading: SINGAPORE", "Port of Loading: SHANGHAI (CNSGH)"), role="BL")
+    result = decide(si, bl)
+    assert result.status.value == "MISMATCH"
+    assert result.defect_fields == ["port_of_loading"]
 
 
 def test_ok_when_all_seven_fields_match():

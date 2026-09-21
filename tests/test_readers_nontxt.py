@@ -140,7 +140,7 @@ def test_docx_reader_rejects_zip_bomb(monkeypatch):
 def test_pdf_reader_uses_text_path_when_text_present(monkeypatch):
     import readers.pdf as pdf_reader
 
-    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: ("Shipper: TEST CO\n" * 5, False))
+    monkeypatch.setattr(pdf_reader, "_extract_text_per_page", lambda data: (["Shipper: TEST CO\n" * 5], False))
     called = {}
 
     def fake_extract_from_text(document_bytes, document_text, role, filename):
@@ -157,7 +157,7 @@ def test_pdf_reader_uses_text_path_when_text_present(monkeypatch):
 def test_pdf_reader_falls_back_to_vision_when_no_text(monkeypatch):
     import readers.pdf as pdf_reader
 
-    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: ("", False))
+    monkeypatch.setattr(pdf_reader, "_extract_text_per_page", lambda data: ([""], False))
     monkeypatch.setattr(pdf_reader, "_render_pages_to_png", lambda data: [b"fake-png-bytes"])
     called = {}
 
@@ -175,7 +175,7 @@ def test_pdf_reader_falls_back_to_vision_when_no_text(monkeypatch):
 def test_pdf_reader_escalates_when_text_is_truncated(monkeypatch):
     import readers.pdf as pdf_reader
 
-    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: ("Shipper: TEST CO\n" * 5, True))
+    monkeypatch.setattr(pdf_reader, "_extract_text_per_page", lambda data: (["Shipper: TEST CO\n" * 5], True))
 
     result = pdf_reader.read_pdf(b"fake-pdf-bytes", "SI", "att.pdf")
 
@@ -186,9 +186,56 @@ def test_pdf_reader_escalates_when_text_is_truncated(monkeypatch):
 def test_pdf_reader_unreadable_when_no_text_and_no_images(monkeypatch):
     import readers.pdf as pdf_reader
 
-    monkeypatch.setattr(pdf_reader, "_extract_text", lambda data: ("", False))
+    monkeypatch.setattr(pdf_reader, "_extract_text_per_page", lambda data: ([""], False))
     monkeypatch.setattr(pdf_reader, "_render_pages_to_png", lambda data: [])
 
     result = pdf_reader.read_pdf(b"corrupt-bytes", "SI", "att.pdf")
     assert result.readable is False
     assert result.doc_kind == "UNKNOWN"
+
+
+def test_pdf_reader_uses_vision_when_only_one_page_has_footer_text(monkeypatch):
+    # Repro: a scanned PDF where page 1 has a 40+ char footer/stamp and the
+    # rest of the pages have no text at all. Routing on *total* text length
+    # would wrongly use the text path and Gemini would only ever see the
+    # footer, missing every real field.
+    import readers.pdf as pdf_reader
+
+    monkeypatch.setattr(
+        pdf_reader,
+        "_extract_text_per_page",
+        lambda data: (["Page 1 of 3 - Document ID 0123456789ABCDEF", "", ""], False),
+    )
+    monkeypatch.setattr(pdf_reader, "_render_pages_to_png", lambda data: [b"p1", b"p2", b"p3"])
+    called = {}
+
+    def fake_extract_from_images(document_bytes, images, role, filename):
+        called["used_vision_path"] = True
+        return DocumentExtraction(role=role, filename=filename, doc_kind="BL", readable=True)
+
+    monkeypatch.setattr(pdf_reader, "extract_from_images", fake_extract_from_images)
+    result = pdf_reader.read_pdf(b"fake-pdf-bytes", "BL", "att.pdf")
+
+    assert called.get("used_vision_path") is True
+    assert result.doc_kind == "BL"
+
+
+def test_pdf_reader_uses_text_path_only_when_every_page_has_real_text(monkeypatch):
+    import readers.pdf as pdf_reader
+
+    monkeypatch.setattr(
+        pdf_reader,
+        "_extract_text_per_page",
+        lambda data: (["Shipper: TEST CO\n" * 5, "Consignee: TEST CO\n" * 5], False),
+    )
+    called = {}
+
+    def fake_extract_from_text(document_bytes, document_text, role, filename):
+        called["used_text_path"] = True
+        return DocumentExtraction(role=role, filename=filename, doc_kind="SI", readable=True)
+
+    monkeypatch.setattr(pdf_reader, "extract_from_text", fake_extract_from_text)
+    result = pdf_reader.read_pdf(b"fake-pdf-bytes", "SI", "att.pdf")
+
+    assert called.get("used_text_path") is True
+    assert result.doc_kind == "SI"

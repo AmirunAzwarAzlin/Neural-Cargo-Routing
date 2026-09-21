@@ -4,6 +4,7 @@ extracts field values with evidence; core/decide.py makes the deterministic call
 import hashlib
 import json
 import random
+import tempfile
 import time
 from pathlib import Path
 
@@ -15,35 +16,51 @@ from core.extract_rules import detect_doc_kind
 from core.models import COMPARED_FIELDS, DecidedBy, DocumentExtraction, ExtractedField, FieldState
 from llm.prompts import PROMPT_VERSION, SYSTEM_INSTRUCTION, build_text_extraction_prompt, build_vision_extraction_prompt
 from llm.schemas import GeminiExtraction
-from llm.validate import evidence_supports_value
+from llm.validate import _norm, evidence_supports_value
 
 CACHE_DIR = Path("gemini_cache")
 MAX_RETRIES = 3
+VISION_SECOND_READ_TEMPERATURE = 0.4
 
 
 def _client() -> genai.Client:
     return genai.Client(api_key=settings.gemini_api_key)
 
 
-def _cache_key(payload_bytes: bytes, kind: str) -> str:
+def _cache_key(payload_bytes: bytes, kind: str, role: str) -> str:
     h = hashlib.sha256()
     h.update(payload_bytes)
     h.update(PROMPT_VERSION.encode())
     h.update(settings.gemini_model.encode())
     h.update(kind.encode())
+    # The prompt embeds role (SI/BL) as a hint; the same bytes attached in
+    # different slots must not silently reuse the first slot's cached result.
+    h.update(role.encode())
     return h.hexdigest()
 
 
+def _cache_dir() -> Path:
+    """gemini_cache/ in the working directory, falling back to a temp dir
+    when that's not writable (e.g. a read-only serverless filesystem)."""
+    for candidate in (CACHE_DIR, Path(tempfile.gettempdir()) / "sdoc_gemini_cache"):
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+        except OSError:
+            continue
+    return CACHE_DIR
+
+
 def _cache_get(key: str) -> dict | None:
-    path = CACHE_DIR / f"{key}.json"
+    path = _cache_dir() / f"{key}.json"
     if path.exists():
         return json.loads(path.read_text(encoding="utf-8"))
     return None
 
 
 def _cache_put(key: str, value: dict) -> None:
-    CACHE_DIR.mkdir(exist_ok=True)
-    (CACHE_DIR / f"{key}.json").write_text(json.dumps(value), encoding="utf-8")
+    path = _cache_dir() / f"{key}.json"
+    path.write_text(json.dumps(value), encoding="utf-8")
 
 
 def _client_error_status(exc: Exception) -> int | None:
@@ -73,7 +90,7 @@ def _call_with_retries(fn):
     raise last_err
 
 
-def _generate_structured(contents: list) -> GeminiExtraction:
+def _generate_structured(contents: list, temperature: float = 0) -> GeminiExtraction:
     client = _client()
 
     def call():
@@ -82,7 +99,7 @@ def _generate_structured(contents: list) -> GeminiExtraction:
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=SYSTEM_INSTRUCTION,
-                temperature=0,
+                temperature=temperature,
                 response_mime_type="application/json",
                 response_schema=GeminiExtraction,
             ),
@@ -139,7 +156,7 @@ def _build_document_extraction(
 
 
 def extract_from_text(document_bytes: bytes, document_text: str, role: str, filename: str) -> DocumentExtraction:
-    key = _cache_key(document_bytes, "text")
+    key = _cache_key(document_bytes, "text", role)
     cached = _cache_get(key)
     if cached is not None:
         extraction = GeminiExtraction.model_validate(cached)
@@ -153,8 +170,10 @@ def extract_from_text(document_bytes: bytes, document_text: str, role: str, file
 def extract_from_images(document_bytes: bytes, images: list[bytes], role: str, filename: str) -> DocumentExtraction:
     """Scanned/image-only documents: two independent Gemini vision reads must
     agree on a field before it is trusted (no text source to validate evidence
-    against, so cross-run agreement is the substitute check)."""
-    key = _cache_key(document_bytes, "vision")
+    against, so cross-run agreement is the substitute check). The second read
+    uses a different temperature so the two runs are an actual independent
+    check rather than the same deterministic call twice."""
+    key = _cache_key(document_bytes, "vision", role)
     cached = _cache_get(key)
     if cached is not None:
         pair = cached
@@ -162,7 +181,7 @@ def extract_from_images(document_bytes: bytes, images: list[bytes], role: str, f
         prompt = build_vision_extraction_prompt(role)
         parts = [types.Part.from_bytes(data=img, mime_type="image/png") for img in images]
         run1 = _generate_structured([prompt, *parts])
-        run2 = _generate_structured([prompt, *parts])
+        run2 = _generate_structured([prompt, *parts], temperature=VISION_SECOND_READ_TEMPERATURE)
         pair = [run1.model_dump(), run2.model_dump()]
         _cache_put(key, pair)
 
@@ -175,7 +194,9 @@ def extract_from_images(document_bytes: bytes, images: list[bytes], role: str, f
     fields: dict[str, ExtractedField] = {}
     for field in COMPARED_FIELDS:
         v1, v2 = getattr(run1, field), getattr(run2, field)
-        if v1.value is not None and v1.value == v2.value:
+        # Whitespace/case differences between the two reads shouldn't
+        # discard an otherwise-agreeing field; keep run1's verbatim value.
+        if v1.value is not None and v2.value is not None and _norm(v1.value) == _norm(v2.value):
             fields[field] = ExtractedField(
                 field=field,
                 source_label=v1.source_label,

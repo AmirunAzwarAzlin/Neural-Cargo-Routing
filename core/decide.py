@@ -58,6 +58,14 @@ def decide(si_doc: DocumentExtraction | None, bl_doc: DocumentExtraction | None)
             notes.append(f"Blank/absent field(s): {', '.join(missing_fields)}")
         if unresolved_fields:
             notes.append(f"Unparseable value(s): {', '.join(unresolved_fields)}")
+        # The submission.json shape keeps has_defect/defect_fields empty for
+        # any NEEDS_REVIEW (scripts/validate_submission.py enforces this),
+        # but a real mismatch on a field that *does* have values on both
+        # sides must not become invisible just because a different field is
+        # blank — surface it in notes instead of silently dropping it.
+        known_defects = [fc.field for fc in per_field if not fc.match]
+        if known_defects:
+            notes.append(f"Also differs: {', '.join(known_defects)}")
         return ComparisonResult(
             status=Status.NEEDS_REVIEW,
             review_reason=ReviewReason.MISSING_VALUE,

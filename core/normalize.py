@@ -5,24 +5,57 @@ weight and container count are compared as exact values after parsing units
 and separators. See README Decisions log.
 """
 import re
+import unicodedata
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 _PORT_CODE_RE = re.compile(r"\(([A-Z]{2}[A-Z0-9]{3})\)\s*$")
+_PORT_CODE_PREFIX_RE = re.compile(r"^([A-Z]{2}[A-Z0-9]{3})\s*[-:]\s*", re.IGNORECASE)
 _WS_RE = re.compile(r"\s+")
 _PUNCT_RE = re.compile(r"[^\w\s]")
 
 
 def normalize_name(value: str) -> str:
-    value = value.strip().casefold()
+    # NFKC folds e.g. "E" + combining-acute into the precomposed "É" (and
+    # compatibility variants like full-width letters) so two documents
+    # encoding the same name differently don't look like a real defect.
+    value = unicodedata.normalize("NFKC", value.strip()).casefold()
     value = _PUNCT_RE.sub(" ", value)
     value = _WS_RE.sub(" ", value)
     return value.strip()
 
 
 def normalize_port(value: str) -> str:
-    """Compare by port name only; a bracketed UNLOCODE is supporting evidence."""
-    value = _PORT_CODE_RE.sub("", value).strip()
-    return normalize_name(value)
+    """The port name only, for display; see ports_match() for the actual
+    comparison, which also checks the UNLOCODE when both sides have one."""
+    name, _code = _parse_port(value)
+    return name
+
+
+def _parse_port(value: str) -> tuple[str, str | None]:
+    """(normalized name, UNLOCODE or None). Handles a trailing "(CODE)" and
+    a leading "CODE - NAME" form."""
+    value = value.strip()
+    m = _PORT_CODE_RE.search(value)
+    if m:
+        return normalize_name(value[: m.start()]), m.group(1).upper()
+    m = _PORT_CODE_PREFIX_RE.match(value)
+    if m:
+        return normalize_name(value[m.end():]), m.group(1).upper()
+    return normalize_name(value), None
+
+
+def ports_match(si_raw: str, bl_raw: str) -> bool:
+    """Port names must always match. A UNLOCODE is supporting evidence, not
+    a required field: a code-only change (name unchanged) is a real defect
+    — e.g. "SHANGHAI (CNSHA)" vs "SHANGHAI (CNSGH)" — but a code present on
+    only one side is not itself a mismatch."""
+    si_name, si_code = _parse_port(si_raw)
+    bl_name, bl_code = _parse_port(bl_raw)
+    if si_name != bl_name:
+        return False
+    if si_code and bl_code and si_code != bl_code:
+        return False
+    return True
 
 
 _CONTAINER_SEGMENT_RE = re.compile(r"\s*[+,]\s*")

@@ -1,5 +1,7 @@
 from core.models import COMPARED_FIELDS, DocumentExtraction, FieldComparison, FieldState
-from core.normalize import normalize_field
+from core.normalize import normalize_field, ports_match
+
+_PORT_FIELDS = {"port_of_loading", "port_of_discharge"}
 
 
 def compare_documents(si: DocumentExtraction, bl: DocumentExtraction) -> list[FieldComparison]:
@@ -19,7 +21,16 @@ def compare_documents(si: DocumentExtraction, bl: DocumentExtraction) -> list[Fi
 
         both_have_values = si_state == FieldState.VALUE and bl_state == FieldState.VALUE
         unresolved = both_have_values and (si_norm is None or bl_norm is None)
-        match = (si_norm == bl_norm) if both_have_values and not unresolved else not unresolved
+        if both_have_values and not unresolved:
+            if field in _PORT_FIELDS:
+                # Name-only comparison hides a code-only change (e.g. the
+                # same port name but a different UNLOCODE); the code is
+                # supporting evidence, only compared when both sides have one.
+                match = ports_match(si_f.raw_value, bl_f.raw_value)
+            else:
+                match = si_norm == bl_norm
+        else:
+            match = not unresolved
 
         results.append(
             FieldComparison(
