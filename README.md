@@ -1,6 +1,9 @@
 # SDOC — Shipping Document Verification
 
 > AI interprets messy documents; deterministic software makes the verification decision; humans resolve genuine uncertainty.
+>
+> https://sdoc-shipping-verification.vercel.app/
+> password is dashboard123 (can use anyname to log in)
 
 This is not "an LLM that compares two documents." Gemini's only job is to read a document and hand back field values with evidence. Every `OK` / `MISMATCH` / `NEEDS_REVIEW` verdict and every `defect_fields` entry is produced by plain, auditable Python — the same code path every time, regardless of which model answered which extraction call.
 
@@ -15,7 +18,7 @@ This is not "an LLM that compares two documents." Gemini's only job is to read a
 7. [Extension (not built — Future Work)](#7-extension-not-built--future-work)
 8. [Data findings and Decisions log](#8-data-findings-and-decisions-log)
 9. [Judging-evidence map](#9-judging-evidence-map)
-10. [Demo script](#10-demo-script)
+
 
 ---
 
@@ -252,19 +255,4 @@ The discriminator is the verb: *send* (operational request, nothing to check yet
 | Innovation & Solution Approach (10) | Six differentiators listed in §5, each traceable to a specific file/function | Cross-document verification (a 7th differentiator in the original build brief) not built | Marked Future Work, not claimed |
 | Practical Value & Potential (10) | Real funnel numbers (§6): 129 comparison requests, 111 auto-resolved, 18 escalated; runtime measured at both cold and warm cache | No manual-baseline timing to compare against | Marked "Not measured yet" rather than invented |
 
-## 10. Demo script
 
-Runnable against the live dashboard or `TestClient` locally.
-
-1. **Problem (0:15)** — Show the raw inbox: a `BL_COMPARISON` request sitting between an `SI_REQUEST`, an `INVOICE_QUERY`, and spam from `webmail-verify.co`.
-2. **Triage (0:10)** — Dashboard category counts: 129 comparison requests found among 520 mixed emails, 40 correctly identified as spam by domain.
-3. **Understanding (0:20)** — Open `email_001`'s detail view: SI says `Port of Loading`, BL says `Port of Loading (POL)` — same canonical field, aligned automatically.
-4. **Verification (0:15)** — Open `email_004`: `consignee` differs (`EAST BRIGHT FZ-LLC` vs `UAB NOVAKOPA`) → `MISMATCH`, `defect_fields: [consignee, notify_party]`.
-5. **Evidence (0:10)** — Same page: each value's source line and extraction method (`rule` for this `.txt` pair) are shown side by side.
-6. **Uncertainty (0:20)** — Open `email_507`: SI attached, BL genuinely missing → `NEEDS_REVIEW / missing_attachment`, explained as a deliberate refusal to guess, not a failure.
-7. **Human review (0:25)** — Confirm `email_507` as reviewed; then on `email_004`, correct the BL's `consignee` field to `EAST BRIGHT FZ-LLC` and show the recompute live-narrow the defect set to just `[notify_party]`, with the audit trail entry appearing below.
-8. **Impact (0:20)** — Dashboard summary: 520 processed, 129 comparison requests (111 auto-resolved, 18 escalated), full run in 119s — then state plainly that the transaction-verification extension is Future Work, not part of this number.
-
----
-
-**Labeling key used throughout this document:** *Measured result* (from an actual run in this repo) · *Observed failure* (something that broke and was fixed, with evidence) · *Known limitation* (a real, disclosed gap) · *Future work* (designed but not built) · *Not measured yet* (no data exists to make the claim).
