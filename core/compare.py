@@ -18,7 +18,8 @@ def compare_documents(si: DocumentExtraction, bl: DocumentExtraction) -> list[Fi
             bl_f.normalized_value = bl_norm
 
         both_have_values = si_state == FieldState.VALUE and bl_state == FieldState.VALUE
-        match = (si_norm == bl_norm) if both_have_values else True
+        unresolved = both_have_values and (si_norm is None or bl_norm is None)
+        match = (si_norm == bl_norm) if both_have_values and not unresolved else not unresolved
 
         results.append(
             FieldComparison(
@@ -28,6 +29,7 @@ def compare_documents(si: DocumentExtraction, bl: DocumentExtraction) -> list[Fi
                 si_state=si_state,
                 bl_state=bl_state,
                 match=match,
+                unresolved=unresolved,
             )
         )
     return results

@@ -25,6 +25,14 @@ BL_TEXT_MISMATCH_CONTAINERS = BL_TEXT_MATCH.replace("3 x 40'HC", "4 x 40'HC")
 
 BL_TEXT_MISSING_WEIGHT = BL_TEXT_MATCH.replace("Gross Wt (kgs): 22,000 KG", "Gross Wt (kgs): N/A")
 
+SI_TEXT_UNPARSEABLE = SI_TEXT.replace(
+    "No. of Containers: 3 x 40'HC", "No. of Containers: FCL"
+).replace("Gross Weight (KG): 22,000 KG", "Gross Weight (KG): AS PER LIST")
+
+BL_TEXT_UNPARSEABLE = BL_TEXT_MATCH.replace(
+    "Container Count: 3 x 40'HC", "Container Count: LCL"
+).replace("Gross Wt (kgs): 22,000 KG", "Gross Wt (kgs): TBC")
+
 INVOICE_TEXT = """COMMERCIAL INVOICE
 Invoice No.: 123
 *** THIS IS A COMMERCIAL INVOICE - NOT A SHIPPING INSTRUCTION ***
@@ -64,6 +72,14 @@ def test_missing_value_when_field_blank():
     assert result.review_reason.value == "missing_value"
 
 
+def test_mismatch_detects_multi_type_container_count_change():
+    si = parse_txt_document(SI_TEXT.replace("3 x 40'HC", "1 x 40'HC + 2 x 20'GP"), role="SI")
+    bl = parse_txt_document(BL_TEXT_MATCH.replace("3 x 40'HC", "1 x 40'HC + 5 x 20'GP"), role="BL")
+    result = decide(si, bl)
+    assert result.status.value == "MISMATCH"
+    assert result.defect_fields == ["container_count"]
+
+
 def test_mismatch_flags_exact_defect_field():
     si = parse_txt_document(SI_TEXT, role="SI")
     bl = parse_txt_document(BL_TEXT_MISMATCH_CONTAINERS, role="BL")
@@ -71,6 +87,14 @@ def test_mismatch_flags_exact_defect_field():
     assert result.status.value == "MISMATCH"
     assert result.has_defect is True
     assert result.defect_fields == ["container_count"]
+
+
+def test_unparseable_values_on_both_sides_do_not_silently_match():
+    si = parse_txt_document(SI_TEXT_UNPARSEABLE, role="SI")
+    bl = parse_txt_document(BL_TEXT_UNPARSEABLE, role="BL")
+    result = decide(si, bl)
+    assert result.status.value == "NEEDS_REVIEW"
+    assert result.review_reason.value == "missing_value"
 
 
 def test_ok_when_all_seven_fields_match():

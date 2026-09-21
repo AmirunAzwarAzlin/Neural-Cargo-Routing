@@ -51,12 +51,18 @@ def decide(si_doc: DocumentExtraction | None, bl_doc: DocumentExtraction | None)
         fc.field for fc in per_field
         if fc.si_state != FieldState.VALUE or fc.bl_state != FieldState.VALUE
     ]
-    if missing_fields:
+    unresolved_fields = [fc.field for fc in per_field if fc.unresolved]
+    if missing_fields or unresolved_fields:
+        notes = []
+        if missing_fields:
+            notes.append(f"Blank/absent field(s): {', '.join(missing_fields)}")
+        if unresolved_fields:
+            notes.append(f"Unparseable value(s): {', '.join(unresolved_fields)}")
         return ComparisonResult(
             status=Status.NEEDS_REVIEW,
             review_reason=ReviewReason.MISSING_VALUE,
             per_field=per_field,
-            notes=f"Blank/absent field(s): {', '.join(missing_fields)}",
+            notes="; ".join(notes),
             **base,
         )
 

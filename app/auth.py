@@ -22,6 +22,8 @@ def make_session_token() -> str:
 
 def require_auth(sdoc_session: str | None = Cookie(default=None)) -> None:
     if not settings.dashboard_password:
-        return  # no password configured: local/dev use only
+        if settings.allow_no_auth:
+            return  # explicit dev-only opt-in
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="DASHBOARD_PASSWORD is not set")
     if sdoc_session != _expected_token():
         raise HTTPException(status_code=status.HTTP_303_SEE_OTHER, headers={"Location": "/login"})

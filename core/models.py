@@ -75,6 +75,7 @@ class FieldComparison(BaseModel):
     si_state: FieldState = FieldState.ABSENT
     bl_state: FieldState = FieldState.ABSENT
     match: bool = True
+    unresolved: bool = False
 
 
 class ComparisonResult(BaseModel):

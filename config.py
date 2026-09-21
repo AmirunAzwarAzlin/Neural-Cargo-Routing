@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     gemini_classify_fallback: bool = True
     enable_transaction_verification: bool = False
     dashboard_password: str = ""
+    allow_no_auth: bool = False
     data_dir: str = "data"
 
 
