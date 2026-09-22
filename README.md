@@ -4,6 +4,8 @@
 >
 > https://sdoc-shipping-verification.vercel.app/
 > password is dashboard123 (can use anyname to log in)
+>
+> link to video slides -> https://canva.link/rxbdxd353kidnw5
 
 This is not "an LLM that compares two documents." Gemini's only job is to read a document and hand back field values with evidence. Every `OK` / `MISMATCH` / `NEEDS_REVIEW` verdict and every `defect_fields` entry is produced by plain, auditable Python — the same code path every time, regardless of which model answered which extraction call.
 
